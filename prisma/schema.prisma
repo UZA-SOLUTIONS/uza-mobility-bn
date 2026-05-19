@@ -1,0 +1,1156 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// SECTION 1 — ROLES & PERMISSIONS (RBAC)
+// ============================================================
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique // e.g. SUPER_ADMIN, MARKETPLACE_ADMIN, FINANCE_ADMIN, etc.
+  description String?
+  permissions RolePermission[]
+  users       UserRole[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  action      String           // e.g. listings:approve, invoices:confirm, payments:verify
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+
+  @@unique([action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================================
+// SECTION 2 — USERS
+// ============================================================
+
+model User {
+  id                String              @id @default(cuid())
+  email             String              @unique
+  phone             String?
+  passwordHash      String
+  firstName         String
+  lastName          String
+  isActive          Boolean             @default(true)
+  isEmailVerified   Boolean             @default(false)
+  isPhoneVerified   Boolean             @default(false)
+  preferredLanguage String              @default("en") // en, fr, rw
+  profilePhoto      String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  deletedAt         DateTime?
+
+  roles             UserRole[]
+  buyerProfile      BuyerProfile?
+  seller            Seller?
+  invoices          Invoice[]
+  orders            Order[]
+  financingRequests FinancingRequest[]
+  fleetRequests     FleetRequest[]
+  activityLogs      ActivityLog[]
+  refreshTokens     RefreshToken[]
+  savedListings     SavedListing[]
+  notifications     Notification[]
+
+  @@map("users")
+}
+
+model UserRole {
+  userId    String
+  roleId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// ============================================================
+// SECTION 3 — BUYER PROFILES
+// ============================================================
+
+enum BuyerType {
+  INDIVIDUAL
+  BUSINESS
+  FLEET_OPERATOR
+  TAXI_ASSOCIATION
+  NGO
+  GOVERNMENT
+  SCHOOL
+  HOTEL
+  LOGISTICS_COMPANY
+}
+
+model BuyerProfile {
+  id              String     @id @default(cuid())
+  userId          String     @unique
+  buyerType       BuyerType  @default(INDIVIDUAL)
+  organizationName String?
+  taxId           String?
+  address         String?
+  city            String?
+  country         String     @default("RW")
+  nationalId      String?
+  passportNumber  String?
+  isVerified      Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("buyer_profiles")
+}
+
+// ============================================================
+// SECTION 4 — SELLERS
+// ============================================================
+
+enum SellerType {
+  UZA_RWANDA_STOCK      // UZA owns vehicle, physically in Rwanda
+  UZA_CHINA_SOURCING    // UZA sources from China/international
+  LOCAL_SELLER          // Local dealer/individual in Rwanda
+  INTERNATIONAL_SELLER  // Non-UZA seller outside Rwanda
+}
+
+enum SellerStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+model Seller {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  sellerType         SellerType
+  status             SellerStatus       @default(PENDING)
+  businessName       String
+  businessRegNumber  String?
+  taxId              String?
+  contactPerson      String?
+  phone              String?
+  email              String?
+  address            String?
+  city               String?
+  country            String
+  logoUrl            String?
+  description        String?
+  isVerified         Boolean            @default(false)
+  verifiedAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listings           Listing[]
+  subscription       SellerSubscription?
+  parts              Part[]
+
+  @@map("sellers")
+}
+
+enum SubscriptionPlan {
+  FREE
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+model SellerSubscription {
+  id             String           @id @default(cuid())
+  sellerId       String           @unique
+  plan           SubscriptionPlan @default(FREE)
+  commissionRate Float            @default(0.02) // 2% default
+  listingLimit   Int              @default(5)
+  startsAt       DateTime
+  expiresAt      DateTime?
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  seller         Seller           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@map("seller_subscriptions")
+}
+
+// ============================================================
+// SECTION 5 — CATEGORIES
+// ============================================================
+
+enum CategoryType {
+  PASSENGER_EV
+  TWO_THREE_WHEEL
+  COMMERCIAL_EV
+  EV_PARTS_ACCESSORIES
+  EV_INFRASTRUCTURE_ENERGY
+}
+
+model Category {
+  id            String        @id @default(cuid())
+  name          String        @unique
+  slug          String        @unique
+  type          CategoryType
+  description   String?
+  iconUrl       String?
+  displayOrder  Int           @default(0)
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  subcategories Subcategory[]
+  listings      Listing[]
+
+  @@map("categories")
+}
+
+model Subcategory {
+  id           String    @id @default(cuid())
+  categoryId   String
+  name         String
+  slug         String    @unique
+  description  String?
+  iconUrl      String?
+  displayOrder Int       @default(0)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  category     Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  listings     Listing[]
+
+  @@unique([categoryId, name])
+  @@map("subcategories")
+}
+
+// ============================================================
+// SECTION 6 — LISTINGS
+// ============================================================
+
+enum ListingStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  PUBLISHED
+  SOLD
+  RESERVED
+  SUSPENDED
+  REJECTED
+  EXPIRED
+  ARCHIVED
+}
+
+enum PowertrainType {
+  BEV   // Battery Electric Vehicle
+  PHEV  // Plug-in Hybrid
+  HEV   // Hybrid
+  EREV  // Extended Range
+}
+
+enum BodyType {
+  SEDAN
+  SUV
+  HATCHBACK
+  CROSSOVER
+  COUPE
+  MPV
+  PICKUP_TRUCK
+  WAGON
+  MINIVAN
+  BUS
+  MINIBUS
+  VAN
+  CARGO_VAN
+  TRUCK
+  LIGHT_TRUCK
+  HEAVY_DUTY_TRUCK
+  UTILITY_VEHICLE
+  DELIVERY_VEHICLE
+  FORKLIFT
+  INDUSTRIAL
+  SHUTTLE
+  MOTORCYCLE
+  SCOOTER
+  BICYCLE
+  TRICYCLE
+  CARGO_BIKE
+}
+
+enum ConditionLevel {
+  NEW
+  EXCELLENT
+  VERY_GOOD
+  GOOD
+  FAIR
+  NEEDS_REVIEW
+}
+
+enum SteeringPosition {
+  LEFT_HAND_DRIVE
+  RIGHT_HAND_DRIVE
+}
+
+enum DrivetrainType {
+  FWD   // Front Wheel Drive
+  RWD   // Rear Wheel Drive
+  AWD   // All Wheel Drive
+  FOUR_WD
+}
+
+enum VerificationLevel {
+  BASIC_LISTED
+  UZA_REVIEWED
+  UZA_VERIFIED
+  UZA_INSPECTED
+  BATTERY_VERIFIED
+  PREMIUM_VERIFIED
+}
+
+model Listing {
+  id                  String             @id @default(cuid())
+  sellerId            String
+  categoryId          String
+  subcategoryId       String?
+  listingTitle        String
+  slug                String             @unique
+  status              ListingStatus      @default(DRAFT)
+  sellerType          SellerType
+  brand               String
+  model               String
+  trim                String?
+  manufacturingYear   Int
+  isNew               Boolean            @default(true)
+  condition           ConditionLevel     @default(NEW)
+  bodyType            BodyType?
+  powertrainType      PowertrainType     @default(BEV)
+  color               String?
+  seats               Int?
+  steeringPosition    SteeringPosition?
+  drivetrain          DrivetrainType?
+  mileageKm           Float?
+  hasWarranty         Boolean            @default(false)
+  warrantyDetails     String?
+  hasAccidentHistory  Boolean            @default(false)
+  ownershipCount      Int?
+  registrationStatus  String?
+  vehicleLocation     String?
+  city                String?
+  country             String             @default("RW")
+  availabilityStatus  String             @default("AVAILABLE")
+  deliveryEstimateDays Int?
+  videoUrl            String?
+  description         String?
+  verificationLevel   VerificationLevel  @default(BASIC_LISTED)
+  isFeatured          Boolean            @default(false)
+  isHotDeal           Boolean            @default(false)
+  viewCount           Int                @default(0)
+  adminNotes          String?            // admin only, not public
+  publishedAt         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  deletedAt           DateTime?
+
+  seller              Seller             @relation(fields: [sellerId], references: [id])
+  category            Category           @relation(fields: [categoryId], references: [id])
+  subcategory         Subcategory?       @relation(fields: [subcategoryId], references: [id])
+  evSpecs             EvSpec?
+  listingPricing      ListingPricing?
+  photos              ListingPhoto[]
+  invoices            Invoice[]
+  orders              Order[]
+  savedBy             SavedListing[]
+  verificationReport  VerificationReport?
+  promotions          ListingPromotion[]
+  sustainabilityData  SustainabilityMetric[]
+  useCaseTags         ListingUseCase[]
+
+  @@index([status, sellerType])
+  @@index([brand, model])
+  @@index([country, city])
+  @@map("listings")
+}
+
+model EvSpec {
+  id                   String   @id @default(cuid())
+  listingId            String   @unique
+  batteryCapacityKwh   Float?
+  batteryHealthPercent Float?
+  batteryHealthReport  Boolean  @default(false)
+  rangeKm              Float?
+  chargingType         String?  // AC, DC, CCS, CHAdeMO, Type2, etc.
+  fastChargingSupported Boolean @default(false)
+  chargingTimeHours    Float?
+  motorPowerKw         Float?
+  topSpeedKmh          Float?
+  payloadCapacityKg    Float?   // commercial vehicles
+  grossVehicleWeightKg Float?   // trucks/buses
+  seatingCapacity      Int?     // buses/vans
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  listing              Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("ev_specs")
+}
+
+model ListingPhoto {
+  id          String   @id @default(cuid())
+  listingId   String
+  url         String
+  altText     String?
+  isPrimary   Boolean  @default(false)
+  displayOrder Int     @default(0)
+  createdAt   DateTime @default(now())
+
+  listing     Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("listing_photos")
+}
+
+enum UseCase {
+  FAMILY
+  TAXI
+  DELIVERY
+  CORPORATE
+  FLEET
+  SCHOOL
+  HOTEL
+  LOGISTICS
+  INDUSTRIAL
+  GOVERNMENT
+  AGRICULTURE
+  WAREHOUSE
+  PERSONAL_MOBILITY
+  COURIER
+  CAMPUS
+  LAST_MILE
+}
+
+model ListingUseCase {
+  listingId String
+  useCase   UseCase
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@id([listingId, useCase])
+  @@map("listing_use_cases")
+}
+
+model SavedListing {
+  userId    String
+  listingId String
+  savedAt   DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@id([userId, listingId])
+  @@map("saved_listings")
+}
+
+// ============================================================
+// SECTION 7 — PRICING ENGINE
+// ============================================================
+
+// Admin-configurable pricing rules per seller type and route
+model PricingRule {
+  id               String     @id @default(cuid())
+  sellerType       SellerType
+  originCountry    String?    // null = applies to all origins
+  destinationCountry String?  // null = applies to all destinations
+  shippingCostUsd  Float?
+  localChargesUsd  Float?
+  taxRatePercent   Float?
+  insuranceRatePercent Float?
+  storagePerDayUsd Float?
+  clearingFeeUsd   Float?
+  platformMarginPercent Float?
+  commissionRate   Float?
+  exchangeRateRwf  Float?     // USD to RWF rate
+  deliveryDaysMin  Int?
+  deliveryDaysMax  Int?
+  isActive         Boolean    @default(true)
+  validFrom        DateTime   @default(now())
+  validUntil       DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@map("pricing_rules")
+}
+
+// Calculated price stored per listing (derived from PricingRule + listing data)
+model ListingPricing {
+  id                    String   @id @default(cuid())
+  listingId             String   @unique
+  basePriceUsd          Float?
+  fobPriceUsd           Float?
+  sellerDesiredPayoutUsd Float?  // local sellers input
+  shippingCostUsd       Float?
+  localChargesUsd       Float?
+  taxesEstimateUsd      Float?
+  insuranceUsd          Float?
+  storageUsd            Float?
+  clearingFeeUsd        Float?
+  landingCostUsd        Float?
+  marginUsd             Float?
+  commissionUsd         Float?
+  discountUsd           Float?
+  finalPriceUsd         Float
+  finalPriceRwf         Float?
+  currency              String   @default("USD")
+  priceValidUntil       DateTime?
+  priceNotes            String?
+  updatedAt             DateTime @updatedAt
+
+  listing               Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("listing_pricing")
+}
+
+// ============================================================
+// SECTION 8 — VERIFICATION
+// ============================================================
+
+model VerificationReport {
+  id                  String            @id @default(cuid())
+  listingId           String            @unique
+  verificationLevel   VerificationLevel @default(BASIC_LISTED)
+  inspectionStatus    String?
+  batteryReportStatus String?
+  documentStatus      String?
+  inspectorName       String?
+  inspectionDate      DateTime?
+  reportUrl           String?
+  batteryReportUrl    String?
+  riskNotes           String?           // admin only
+  verifiedAt          DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  listing             Listing           @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("verification_reports")
+}
+
+// ============================================================
+// SECTION 9 — INVOICES
+// ============================================================
+
+enum InvoiceType {
+  PROFORMA
+  DEPOSIT
+  BALANCE
+  FINAL
+  FLEET
+  PARTS
+  CHARGING_EQUIPMENT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  AWAITING_PAYMENT
+  PAYMENT_SUBMITTED
+  UNDER_VERIFICATION
+  PAYMENT_CONFIRMED
+  PARTIALLY_PAID
+  FULLY_PAID
+  EXPIRED
+  REJECTED
+  REFUNDED
+  CANCELLED
+}
+
+model Invoice {
+  id                String        @id @default(cuid())
+  invoiceNumber     String        @unique  // e.g. UZM-INV-2026-000123
+  paymentReference  String        @unique  // e.g. UZM-PAY-2026-000483
+  userId            String
+  listingId         String?
+  invoiceType       InvoiceType   @default(PROFORMA)
+  status            InvoiceStatus @default(DRAFT)
+
+  // Buyer snapshot at invoice time
+  buyerName         String
+  buyerEmail        String?
+  buyerPhone        String?
+  buyerAddress      String?
+  buyerType         String?
+
+  // Vehicle snapshot
+  vehicleBrand      String?
+  vehicleModel      String?
+  vehicleTrim       String?
+  vehicleYear       Int?
+  vehicleCondition  String?
+  vehicleLocation   String?
+  sellerType        SellerType?
+  verificationLevel String?
+
+  // Price breakdown snapshot
+  basePriceUsd      Float?
+  fobPriceUsd       Float?
+  shippingCostUsd   Float?
+  localChargesUsd   Float?
+  taxesUsd          Float?
+  insuranceUsd      Float?
+  clearingFeeUsd    Float?
+  landingCostUsd    Float?
+  marginUsd         Float?
+  discountUsd       Float?
+  totalAmountUsd    Float
+  totalAmountRwf    Float?
+  currency          String        @default("USD")
+
+  // Payment details
+  beneficiaryName   String?
+  bankName          String?
+  accountNumber     String?
+  paymentDeadline   DateTime?
+  validUntil        DateTime?
+  deliveryEstimate  String?
+
+  pdfUrl            String?
+  notes             String?
+  issuedAt          DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user              User          @relation(fields: [userId], references: [id])
+  listing           Listing?      @relation(fields: [listingId], references: [id])
+  payments          Payment[]
+  order             Order?
+  financingRequest  FinancingRequest?
+
+  @@index([status])
+  @@index([userId])
+  @@map("invoices")
+}
+
+// ============================================================
+// SECTION 10 — PAYMENTS
+// ============================================================
+
+enum PaymentStatus {
+  SUBMITTED
+  UNDER_VERIFICATION
+  CONFIRMED
+  REJECTED
+  REFUNDED
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  invoiceId         String
+  amountPaid        Float
+  currency          String        @default("USD")
+  bankName          String?
+  transferReference String?
+  paymentDate       DateTime?
+  senderName        String?
+  notes             String?
+  status            PaymentStatus @default(SUBMITTED)
+  verifiedBy        String?       // admin user id
+  verifiedAt        DateTime?
+  rejectionReason   String?
+  bankStatementRef  String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  invoice           Invoice       @relation(fields: [invoiceId], references: [id])
+  proofs            PaymentProof[]
+
+  @@map("payments")
+}
+
+model PaymentProof {
+  id          String   @id @default(cuid())
+  paymentId   String
+  fileUrl     String
+  fileType    String   // PDF, JPG, PNG, WEBP
+  fileName    String
+  uploadedAt  DateTime @default(now())
+
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("payment_proofs")
+}
+
+// ============================================================
+// SECTION 11 — ORDERS & TRACKING
+// ============================================================
+
+enum OrderStatus {
+  INVOICE_ISSUED
+  PAYMENT_SUBMITTED
+  PAYMENT_CONFIRMED
+  VEHICLE_RESERVED
+  PROCESSING
+  IN_TRANSIT
+  ARRIVED
+  CLEARANCE
+  READY_FOR_HANDOVER
+  DELIVERED
+  CANCELLED
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     String      @unique  // UZM-ORD-2026-000123
+  userId          String
+  listingId       String
+  invoiceId       String      @unique
+  status          OrderStatus @default(INVOICE_ISSUED)
+  sellerType      SellerType
+  deliveryAddress String?
+  deliveryCity    String?
+  deliveryCountry String      @default("RW")
+  estimatedDeliveryDate DateTime?
+  actualDeliveryDate    DateTime?
+  handoverNotes   String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user            User        @relation(fields: [userId], references: [id])
+  listing         Listing     @relation(fields: [listingId], references: [id])
+  invoice         Invoice     @relation(fields: [invoiceId], references: [id])
+  trackingEvents  OrderTrackingEvent[]
+
+  @@map("orders")
+}
+
+model OrderTrackingEvent {
+  id          String   @id @default(cuid())
+  orderId     String
+  stage       String   // e.g. "PAYMENT_CONFIRMED", "SHIPPED", "CLEARANCE"
+  title       String   // Human-readable: "Payment Confirmed"
+  description String?
+  location    String?
+  performedBy String?  // admin user id
+  occurredAt  DateTime @default(now())
+
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_tracking_events")
+}
+
+// ============================================================
+// SECTION 12 — FINANCING REQUESTS
+// ============================================================
+
+enum FinancingStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  SENT_TO_BANK
+  BANK_APPROVED
+  BANK_REJECTED
+  CANCELLED
+}
+
+model FinancingRequest {
+  id                    String          @id @default(cuid())
+  userId                String
+  invoiceId             String?         @unique
+  listingId             String?
+  status                FinancingStatus @default(SUBMITTED)
+  buyerName             String
+  phone                 String
+  buyerType             BuyerType?
+  employmentStatus      String?
+  organizationName      String?
+  preferredDepositUsd   Float?
+  preferredBankName     String?
+  notes                 String?
+  assignedBankId        String?
+  reviewNotes           String?         // admin only
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  user                  User            @relation(fields: [userId], references: [id])
+  invoice               Invoice?        @relation(fields: [invoiceId], references: [id])
+  assignedBank          Bank?           @relation(fields: [assignedBankId], references: [id])
+
+  @@map("financing_requests")
+}
+
+model Bank {
+  id                String             @id @default(cuid())
+  name              String
+  country           String
+  contactEmail      String?
+  contactPhone      String?
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+
+  financingRequests FinancingRequest[]
+
+  @@map("banks")
+}
+
+// ============================================================
+// SECTION 13 — FLEET & ASSOCIATIONS
+// ============================================================
+
+enum FleetRequestStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  QUOTED
+  APPROVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Association {
+  id           String        @id @default(cuid())
+  name         String
+  type         String        // TAXI, DELIVERY, TRANSPORT, etc.
+  country      String
+  city         String?
+  contactPerson String?
+  phone        String?
+  email        String?
+  isVerified   Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  members      AssociationMember[]
+  fleetRequests FleetRequest[]
+
+  @@map("associations")
+}
+
+model AssociationMember {
+  id            String      @id @default(cuid())
+  associationId String
+  userId        String?
+  memberName    String
+  phone         String?
+  email         String?
+  role          String?     // PRESIDENT, MEMBER, etc.
+  joinedAt      DateTime    @default(now())
+
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+
+  @@map("association_members")
+}
+
+model FleetRequest {
+  id                       String             @id @default(cuid())
+  userId                   String
+  associationId            String?
+  status                   FleetRequestStatus @default(SUBMITTED)
+  organizationName         String
+  contactPerson            String
+  phone                    String
+  email                    String?
+  buyerType                BuyerType
+  vehicleCategoryId        String?
+  vehicleSubcategoryId     String?
+  quantity                 Int
+  useCase                  UseCase?
+  preferredDeliveryTimeline String?
+  budgetRangeMin           Float?
+  budgetRangeMax           Float?
+  financingRequested       Boolean            @default(false)
+  chargingSupportRequested Boolean            @default(false)
+  notes                    String?
+  adminNotes               String?
+  quotedAt                 DateTime?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+
+  user                     User               @relation(fields: [userId], references: [id])
+  association              Association?       @relation(fields: [associationId], references: [id])
+
+  @@map("fleet_requests")
+}
+
+// ============================================================
+// SECTION 14 — SPARE PARTS
+// ============================================================
+
+enum PartCondition {
+  NEW
+  USED
+  REFURBISHED
+}
+
+model Part {
+  id               String        @id @default(cuid())
+  sellerId         String?
+  name             String
+  slug             String        @unique
+  categorySlug     String        // batteries, motors, chargers, etc.
+  compatibleBrands String[]      // e.g. ["BYD", "Zeekr"]
+  compatibleModels String[]
+  condition        PartCondition @default(NEW)
+  priceUsd         Float
+  stockQuantity    Int           @default(0)
+  deliveryEstimate String?
+  hasWarranty      Boolean       @default(false)
+  warrantyDetails  String?
+  description      String?
+  isActive         Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  seller           Seller?       @relation(fields: [sellerId], references: [id])
+  photos           PartPhoto[]
+
+  @@map("parts")
+}
+
+model PartPhoto {
+  id       String @id @default(cuid())
+  partId   String
+  url      String
+  isPrimary Boolean @default(false)
+
+  part     Part   @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@map("part_photos")
+}
+
+// ============================================================
+// SECTION 15 — ENERGY & CHARGING PRODUCTS
+// ============================================================
+
+enum ChargingProductType {
+  HOME_CHARGER
+  COMMERCIAL_CHARGER
+  FLEET_CHARGING_SYSTEM
+  PUBLIC_CHARGING_STATION
+  DC_FAST_CHARGER
+  AC_CHARGER
+  CHARGING_ACCESSORY
+  SOLAR_EV_PACKAGE
+  BATTERY_STORAGE
+  SMART_CHARGING
+  ENERGY_MANAGEMENT
+  SITE_EQUIPMENT
+}
+
+model ChargingProduct {
+  id              String              @id @default(cuid())
+  name            String
+  slug            String              @unique
+  productType     ChargingProductType
+  brand           String?
+  powerKw         Float?
+  voltage         String?
+  connectorTypes  String[]
+  solarIncluded   Boolean             @default(false)
+  priceUsd        Float?
+  description     String?
+  isActive        Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  energyRequests  EnergyRequest[]
+  photos          ChargingProductPhoto[]
+
+  @@map("charging_products")
+}
+
+model ChargingProductPhoto {
+  id        String          @id @default(cuid())
+  productId String
+  url       String
+  isPrimary Boolean         @default(false)
+
+  product   ChargingProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("charging_product_photos")
+}
+
+model EnergyRequest {
+  id                    String           @id @default(cuid())
+  clientType            BuyerType?
+  location              String?
+  city                  String?
+  numberOfEvs           Int?
+  chargerTypeNeeded     ChargingProductType?
+  solarSupportNeeded    Boolean          @default(false)
+  fleetUse              Boolean          @default(false)
+  siteVisitRequested    Boolean          @default(false)
+  contactName           String
+  phone                 String
+  email                 String?
+  notes                 String?
+  status                String           @default("SUBMITTED")
+  chargingProductId     String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  chargingProduct       ChargingProduct? @relation(fields: [chargingProductId], references: [id])
+
+  @@map("energy_requests")
+}
+
+// ============================================================
+// SECTION 16 — PROMOTIONS & ADVERTISING
+// ============================================================
+
+enum PromotionType {
+  FEATURED_LISTING
+  HOMEPAGE_BANNER
+  CATEGORY_SPONSORSHIP
+  SPONSORED_SUPPLIER
+  BANK_PARTNER_BANNER
+  CHARGING_PARTNER_BANNER
+  DEAL_OF_WEEK
+  NEW_ARRIVAL_HIGHLIGHT
+  DISCOUNT_CAMPAIGN
+  FLEET_DISCOUNT
+  TAXI_ASSOCIATION_CAMPAIGN
+  SEASONAL_PROMOTION
+  REFERRAL_PROMOTION
+}
+
+model Promotion {
+  id               String          @id @default(cuid())
+  name             String
+  type             PromotionType
+  sponsorName      String?
+  discountAmountUsd Float?
+  discountPercent  Float?
+  bannerImageUrl   String?
+  bannerPlacement  String?         // HOMEPAGE_TOP, CATEGORY_PAGE, SIDEBAR
+  startDate        DateTime
+  endDate          DateTime
+  isActive         Boolean         @default(true)
+  clickUrl         String?
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  listings         ListingPromotion[]
+
+  @@map("promotions")
+}
+
+model ListingPromotion {
+  listingId   String
+  promotionId String
+  appliedAt   DateTime  @default(now())
+
+  listing     Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@id([listingId, promotionId])
+  @@map("listing_promotions")
+}
+
+// ============================================================
+// SECTION 17 — SUSTAINABILITY
+// ============================================================
+
+model SustainabilityMetric {
+  id                    String   @id @default(cuid())
+  listingId             String?
+  orderId               String?
+  vehicleType           String?
+  buyerType             BuyerType?
+  fleetClientName       String?
+  country               String?
+  estimatedFuelSavedL   Float?   // liters of fuel saved
+  estimatedCo2AvoidedKg Float?   // kg of CO2 avoided
+  greenKmSupported      Float?
+  recordedAt            DateTime @default(now())
+
+  listing               Listing? @relation(fields: [listingId], references: [id])
+
+  @@map("sustainability_metrics")
+}
+
+// ============================================================
+// SECTION 18 — NOTIFICATIONS
+// ============================================================
+
+enum NotificationType {
+  INVOICE_ISSUED
+  PAYMENT_CONFIRMED
+  PAYMENT_REJECTED
+  ORDER_STATUS_UPDATED
+  LISTING_APPROVED
+  LISTING_REJECTED
+  FINANCING_UPDATE
+  FLEET_REQUEST_UPDATE
+  SYSTEM_ALERT
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  type       NotificationType
+  title      String
+  body       String
+  isRead     Boolean          @default(false)
+  metadata   Json?            // any extra context
+  createdAt  DateTime         @default(now())
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ============================================================
+// SECTION 19 — AUDIT / ACTIVITY LOGS
+// ============================================================
+
+model ActivityLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  action       String   // e.g. "listing:approved", "payment:confirmed"
+  entity       String?  // e.g. "Listing", "Invoice"
+  entityId     String?
+  ipAddress    String?
+  userAgent    String?
+  metadata     Json?    // before/after state or extra context
+  occurredAt   DateTime @default(now())
+
+  user         User?    @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@map("activity_logs")
+}
