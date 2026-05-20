@@ -18,6 +18,7 @@ import {
   PartialType,
 } from '@nestjs/swagger';
 import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
+import { CreateSellerProfileDto } from './dto/create-seller-profile.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 import type { Request } from 'express';
@@ -28,6 +29,7 @@ import { RolesGuard } from '../modules/auth/guards/roles.guard';
 import { Roles } from '../modules/auth/decorators/roles.decorator';
 
 class UpdateBuyerProfileDto extends PartialType(CreateBuyerProfileDto) {}
+class UpdateSellerProfileDto extends PartialType(CreateSellerProfileDto) {}
 
 @ApiTags('users')
 @ApiBearerAuth('JWT-access')
@@ -71,10 +73,60 @@ export class UsersController {
     @Body() dto: UpdateBuyerProfileDto,
   ) {
     const user = request.user as { sub: string } | undefined;
+
     if (!user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
+
     return this.usersService.updateBuyerProfile(user.sub, dto);
+  }
+
+  @Get('seller-profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get own seller profile' })
+  @ApiOkResponse({ description: 'Seller profile' })
+  getSellerProfile(@Req() request: Request) {
+    const user = request.user as { sub: string } | undefined;
+
+    if (!user?.sub) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    return this.usersService.getSellerProfile(user.sub);
+  }
+
+  @Post('seller-profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Create seller profile' })
+  @ApiOkResponse({ description: 'Created seller profile' })
+  createSellerProfile(
+    @Req() request: Request,
+    @Body() dto: CreateSellerProfileDto,
+  ) {
+    const user = request.user as { sub: string } | undefined;
+
+    if (!user?.sub) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    return this.usersService.createSellerProfile(user.sub, dto);
+  }
+
+  @Patch('seller-profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Update seller profile' })
+  @ApiOkResponse({ description: 'Updated seller profile' })
+  updateSellerProfile(
+    @Req() request: Request,
+    @Body() dto: UpdateSellerProfileDto,
+  ) {
+    const user = request.user as { sub: string } | undefined;
+
+    if (!user?.sub) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    return this.usersService.updateSellerProfile(user.sub, dto);
   }
 
   @Get()

@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
+import { CreateSellerProfileDto } from './dto/create-seller-profile.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { SafeUser } from './users.types';
 
@@ -114,6 +115,36 @@ export class UsersService {
     });
   }
 
+  async createSellerProfile(userId: string, dto: CreateSellerProfileDto) {
+    await this.addRoleIfMissing(userId, 'SELLER');
+
+    const existing = await this.prisma.seller.findUnique({
+      where: { userId },
+    });
+
+    if (existing) {
+      throw new ConflictException('Seller profile already exists');
+    }
+
+    return this.prisma.seller.create({
+      data: {
+        userId,
+        sellerType: dto.sellerType,
+        businessName: dto.businessName,
+        businessRegNumber: dto.businessRegNumber,
+        taxId: dto.taxId,
+        contactPerson: dto.contactPerson,
+        phone: dto.phone,
+        email: dto.email,
+        address: dto.address,
+        city: dto.city,
+        country: dto.country,
+        logoUrl: dto.logoUrl,
+        description: dto.description,
+      },
+    });
+  }
+
   async getBuyerProfile(userId: string) {
     const profile = await this.prisma.buyerProfile.findUnique({
       where: { userId },
@@ -126,15 +157,27 @@ export class UsersService {
     return profile;
   }
 
-  async updateBuyerProfile(
-    userId: string,
-    dto: Partial<CreateBuyerProfileDto>,
-  ) {
-    const profile = await this.prisma.buyerProfile.findUnique({
+  async getSellerProfile(userId: string) {
+    const profile = await this.prisma.seller.findUnique({
       where: { userId },
     });
 
     if (!profile) {
+      throw new NotFoundException('Seller profile not found');
+    }
+
+    return profile;
+  }
+
+  async updateBuyerProfile(
+    userId: string,
+    dto: Partial<CreateBuyerProfileDto>,
+  ) {
+    const existing = await this.prisma.buyerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!existing) {
       throw new NotFoundException('Buyer profile not found');
     }
 
@@ -149,6 +192,37 @@ export class UsersService {
         country: dto.country,
         nationalId: dto.nationalId,
         passportNumber: dto.passportNumber,
+      },
+    });
+  }
+
+  async updateSellerProfile(
+    userId: string,
+    dto: Partial<CreateSellerProfileDto>,
+  ) {
+    const existing = await this.prisma.seller.findUnique({
+      where: { userId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Seller profile not found');
+    }
+
+    return this.prisma.seller.update({
+      where: { userId },
+      data: {
+        sellerType: dto.sellerType,
+        businessName: dto.businessName,
+        businessRegNumber: dto.businessRegNumber,
+        taxId: dto.taxId,
+        contactPerson: dto.contactPerson,
+        phone: dto.phone,
+        email: dto.email,
+        address: dto.address,
+        city: dto.city,
+        country: dto.country,
+        logoUrl: dto.logoUrl,
+        description: dto.description,
       },
     });
   }
@@ -187,6 +261,41 @@ export class UsersService {
         roleId: role.id,
       })),
     });
+
+    const updated = await this.findById(userId);
+
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.toSafeUser(updated);
+  }
+
+  async addRoleIfMissing(userId: string, roleName: string): Promise<SafeUser> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { roles: { include: { role: true } } },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const already = user.roles.some((ur) => ur.role.name === roleName);
+
+    if (already) {
+      throw new ConflictException('User already has this role');
+    }
+
+    const role = await this.prisma.role.findUnique({
+      where: { name: roleName },
+    });
+
+    if (!role) {
+      throw new NotFoundException('Role not found');
+    }
+
+    await this.prisma.userRole.create({ data: { userId, roleId: role.id } });
 
     const updated = await this.findById(userId);
 
