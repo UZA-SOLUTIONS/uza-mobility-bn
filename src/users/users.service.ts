@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { SafeUser } from './users.types';
 
@@ -42,6 +44,21 @@ export class UsersService {
     });
   }
 
+  async findAll(): Promise<SafeUser[]> {
+    const users = await this.prisma.user.findMany({
+      include: {
+        roles: {
+          include: {
+            role: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return users.map((user) => this.toSafeUser(user));
+  }
+
   async createUser(data: Prisma.UserCreateInput): Promise<SafeUser> {
     const created = await this.prisma.user.create({
       data,
@@ -69,6 +86,134 @@ export class UsersService {
         },
       },
     });
+
+    return this.toSafeUser(updated);
+  }
+
+  async createBuyerProfile(userId: string, dto: CreateBuyerProfileDto) {
+    const existing = await this.prisma.buyerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (existing) {
+      throw new ConflictException('Buyer profile already exists');
+    }
+
+    return this.prisma.buyerProfile.create({
+      data: {
+        userId,
+        buyerType: dto.buyerType as never,
+        organizationName: dto.organizationName,
+        taxId: dto.taxId,
+        address: dto.address,
+        city: dto.city,
+        country: dto.country ?? 'RW',
+        nationalId: dto.nationalId,
+        passportNumber: dto.passportNumber,
+      },
+    });
+  }
+
+  async getBuyerProfile(userId: string) {
+    const profile = await this.prisma.buyerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!profile) {
+      throw new NotFoundException('Buyer profile not found');
+    }
+
+    return profile;
+  }
+
+  async updateBuyerProfile(
+    userId: string,
+    dto: Partial<CreateBuyerProfileDto>,
+  ) {
+    const profile = await this.prisma.buyerProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!profile) {
+      throw new NotFoundException('Buyer profile not found');
+    }
+
+    return this.prisma.buyerProfile.update({
+      where: { userId },
+      data: {
+        buyerType: dto.buyerType as never,
+        organizationName: dto.organizationName,
+        taxId: dto.taxId,
+        address: dto.address,
+        city: dto.city,
+        country: dto.country,
+        nationalId: dto.nationalId,
+        passportNumber: dto.passportNumber,
+      },
+    });
+  }
+
+  async updateUserRoles(
+    userId: string,
+    roleNames: string[],
+  ): Promise<SafeUser> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        roles: {
+          include: {
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const roles = await this.prisma.role.findMany({
+      where: { name: { in: roleNames } },
+    });
+
+    if (roles.length !== roleNames.length) {
+      throw new BadRequestException('One or more roles do not exist');
+    }
+
+    await this.prisma.userRole.deleteMany({ where: { userId } });
+    await this.prisma.userRole.createMany({
+      data: roles.map((role) => ({
+        userId,
+        roleId: role.id,
+      })),
+    });
+
+    const updated = await this.findById(userId);
+
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.toSafeUser(updated);
+  }
+
+  async deactivateUser(userId: string): Promise<SafeUser> {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        isActive: false,
+        deletedAt: new Date(),
+      },
+      include: {
+        roles: {
+          include: {
+            role: true,
+          },
+        },
+      },
+    });
+
+    await this.prisma.refreshToken.deleteMany({ where: { userId } });
 
     return this.toSafeUser(updated);
   }

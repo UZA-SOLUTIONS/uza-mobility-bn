@@ -6,7 +6,4 @@ export class AuthResponseDto {
 
   @ApiProperty()
   refreshToken!: string;
-
-  @ApiProperty({ required: false })
-  user?: Record<string, unknown>;
 }

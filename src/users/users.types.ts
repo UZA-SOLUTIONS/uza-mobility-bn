@@ -9,6 +9,7 @@ export interface JwtUserPayload {
   sub: string;
   email: string;
   roles: string[];
+  permissions: string[];
   tokenType: 'access' | 'refresh';
   iat: number;
   exp: number;

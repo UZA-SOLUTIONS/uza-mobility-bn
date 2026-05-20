@@ -18,6 +18,14 @@ async function ensureRole(name: string, description?: string) {
   });
 }
 
+async function ensurePermission(action: string, description?: string) {
+  return prisma.permission.upsert({
+    where: { action },
+    update: { description: description ?? undefined },
+    create: { action, description: description ?? null },
+  });
+}
+
 async function ensureUserWithRoles(params: {
   email: string;
   plainPassword: string;
@@ -78,17 +86,115 @@ async function ensureUserWithRoles(params: {
   );
 }
 
+async function seedPermissionsAndRoleMappings() {
+  const permissions = [
+    'listings:create',
+    'listings:read',
+    'listings:approve',
+    'listings:reject',
+    'listings:feature',
+    'listings:delete',
+    'invoices:create',
+    'invoices:read',
+    'invoices:send',
+    'invoices:cancel',
+    'payments:submit',
+    'payments:verify',
+    'payments:reject',
+    'payments:refund',
+    'orders:read',
+    'orders:update-status',
+    'sellers:verify',
+    'sellers:suspend',
+    'fleet:read',
+    'fleet:update-status',
+    'financing:read',
+    'financing:send-to-bank',
+    'promotions:create',
+    'promotions:manage',
+    'sustainability:read',
+    'sustainability:manage',
+    'users:read',
+    'users:manage-roles',
+  ];
+
+  const permissionRecords = await Promise.all(
+    permissions.map((action) => ensurePermission(action)),
+  );
+
+  const roleMappings: Record<string, string[]> = {
+    SUPER_ADMIN: ['*'],
+    MARKETPLACE_ADMIN: [
+      'listings:create',
+      'listings:read',
+      'listings:approve',
+      'listings:reject',
+      'listings:feature',
+      'listings:delete',
+      'sellers:verify',
+      'sellers:suspend',
+    ],
+    FINANCE_ADMIN: [
+      'invoices:read',
+      'invoices:send',
+      'invoices:cancel',
+      'payments:verify',
+      'payments:reject',
+      'payments:refund',
+      'financing:read',
+      'financing:send-to-bank',
+    ],
+    LOGISTICS_ADMIN: ['orders:read', 'orders:update-status'],
+    FLEET_ADMIN: ['fleet:read', 'fleet:update-status', 'listings:read'],
+    SUSTAINABILITY_ADMIN: ['sustainability:read', 'sustainability:manage', 'orders:read'],
+    ADVERTISING_ADMIN: ['promotions:create', 'promotions:manage', 'listings:feature'],
+    SALES_AGENT: ['listings:read', 'orders:read'],
+    SELLER: ['listings:create', 'listings:read'],
+    BUYER: ['listings:read', 'invoices:create', 'payments:submit', 'orders:read'],
+  };
+
+  const allActionToRecord = new Map(
+    permissionRecords.map((record) => [record.action, record]),
+  );
+
+  for (const [roleName, allowedActions] of Object.entries(roleMappings)) {
+    const role = await ensureRole(roleName);
+
+    const actionsToAttach =
+      allowedActions.includes('*') ? permissions : allowedActions;
+
+    await Promise.all(
+      actionsToAttach.map((action) => {
+        const permission = allActionToRecord.get(action);
+        if (!permission) {
+          throw new Error(`Permission not seeded: ${action}`);
+        }
+
+        return prisma.rolePermission.upsert({
+          where: {
+            roleId_permissionId: {
+              roleId: role.id,
+              permissionId: permission.id,
+            },
+          },
+          update: {},
+          create: {
+            roleId: role.id,
+            permissionId: permission.id,
+          },
+        });
+      }),
+    );
+  }
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) {
     throw new Error('Missing DATABASE_URL. Add it to your .env before running prisma:seed.');
   }
 
   // Roles for login testing
-  await Promise.all(
-    ['SUPER_ADMIN', 'MARKETPLACE_ADMIN', 'FINANCE_ADMIN', 'BUYER', 'SELLER'].map(
-      (r) => ensureRole(r),
-    ),
-  );
+  await seedPermissionsAndRoleMappings();
 
   // Use single-role users (easier to reason about during login tests)
   // If you still want admin to have multiple roles, add them to roleNames array.

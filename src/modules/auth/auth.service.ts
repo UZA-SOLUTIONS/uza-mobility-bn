@@ -2,15 +2,71 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import { UsersService } from '../users/users.service';
-import { SafeUser } from '../users/users.types';
+import { compareSync, genSaltSync, hashSync } from 'bcryptjs';
+import { PrismaService } from '../../prisma/prisma.service';
+import { UsersService } from '../../users/users.service';
+import { SafeUser } from '../../users/users.types';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
-import { hashPassword, verifyPassword } from './jwt.utils';
 import type { SignOptions } from 'jsonwebtoken';
+
+const ROLE_PERMISSIONS: Record<string, string[]> = {
+  SUPER_ADMIN: ['*'],
+  MARKETPLACE_ADMIN: [
+    'listings:create',
+    'listings:read',
+    'listings:approve',
+    'listings:reject',
+    'listings:feature',
+    'listings:delete',
+    'sellers:verify',
+    'sellers:suspend',
+  ],
+  FINANCE_ADMIN: [
+    'invoices:read',
+    'invoices:send',
+    'invoices:cancel',
+    'payments:verify',
+    'payments:reject',
+    'payments:refund',
+    'financing:read',
+    'financing:send-to-bank',
+  ],
+  LOGISTICS_ADMIN: ['orders:read', 'orders:update-status'],
+  FLEET_ADMIN: ['fleet:read', 'fleet:update-status', 'listings:read'],
+  SUSTAINABILITY_ADMIN: [
+    'sustainability:read',
+    'sustainability:manage',
+    'orders:read',
+  ],
+  ADVERTISING_ADMIN: [
+    'promotions:create',
+    'promotions:manage',
+    'listings:feature',
+  ],
+  SALES_AGENT: ['listings:read', 'orders:read'],
+  SELLER: ['listings:create', 'listings:read'],
+  BUYER: ['listings:read', 'invoices:create', 'payments:submit', 'orders:read'],
+};
+
+function resolvePermissionsForRoles(roles: string[]): string[] {
+  const permissions = new Set<string>();
+
+  for (const role of roles) {
+    const rolePermissions = ROLE_PERMISSIONS[role] ?? [];
+
+    if (rolePermissions.includes('*')) {
+      return ['*'];
+    }
+
+    for (const permission of rolePermissions) {
+      permissions.add(permission);
+    }
+  }
+
+  return Array.from(permissions);
+}
 
 type UserWithRelations = Prisma.UserGetPayload<{
   include: { roles: { include: { role: true } } };
@@ -28,8 +84,8 @@ export class AuthService {
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
     await this.usersService.ensureEmailIsAvailable(dto.email);
 
-    const passwordHash = hashPassword(dto.password);
-
+    const passwordHash = this.hashPassword(dto.password);
+    // Assign a default role to newly registered users (BUYER)
     const createdUser = await this.usersService.createUser({
       email: dto.email,
       phone: dto.phone,
@@ -37,6 +93,15 @@ export class AuthService {
       firstName: dto.firstName,
       lastName: dto.lastName,
       preferredLanguage: dto.preferredLanguage ?? 'en',
+      roles: {
+        create: [
+          {
+            role: {
+              connect: { name: 'BUYER' },
+            },
+          },
+        ],
+      },
     });
 
     return this.issueTokens(createdUser);
@@ -54,18 +119,19 @@ export class AuthService {
       },
     });
 
-    if (!user || !verifyPassword(dto.password, user.passwordHash)) {
+    if (!user || !this.verifyPassword(dto.password, user.passwordHash)) {
       throw new UnauthorizedException('Invalid email or password');
     }
 
     return this.issueTokens(this.usersService.toSafeUser(user));
   }
 
-  async refresh(dto: RefreshTokenDto): Promise<AuthResponseDto> {
+  // Accept the raw refresh token (from Authorization header) instead of a DTO body
+  async refresh(refreshToken: string): Promise<AuthResponseDto> {
     let payload: Record<string, any>;
 
     try {
-      payload = this.jwtService.verify(dto.refreshToken);
+      payload = this.jwtService.verify(refreshToken);
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -75,7 +141,7 @@ export class AuthService {
     }
 
     const tokenRecord = await this.prisma.refreshToken.findUnique({
-      where: { token: dto.refreshToken },
+      where: { token: refreshToken },
       include: {
         user: {
           include: {
@@ -100,13 +166,17 @@ export class AuthService {
     return this.issueTokens(this.usersService.toSafeUser(tokenRecord.user));
   }
 
+  async logout(refreshToken: string): Promise<void> {
+    await this.prisma.refreshToken.deleteMany({
+      where: { token: refreshToken },
+    });
+  }
+
   async me(userId: string) {
     return this.usersService.ensureUserExists(userId);
   }
 
   private async issueTokens(user: SafeUser): Promise<AuthResponseDto> {
-    const accessExpiresIn =
-      this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '15m';
     const refreshExpiresIn =
       this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
 
@@ -115,6 +185,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       roles: user.roles,
+      permissions: resolvePermissionsForRoles(user.roles),
       tokenType: 'access',
     });
 
@@ -124,6 +195,7 @@ export class AuthService {
         sub: user.id,
         email: user.email,
         roles: user.roles,
+        permissions: resolvePermissionsForRoles(user.roles),
         tokenType: 'refresh',
       },
       {
@@ -152,5 +224,14 @@ export class AuthService {
       accessToken,
       refreshToken,
     };
+  }
+
+  private hashPassword(password: string): string {
+    const salt = genSaltSync(10);
+    return hashSync(password, salt);
+  }
+
+  private verifyPassword(password: string, storedHash: string): boolean {
+    return compareSync(password, storedHash);
   }
 }
