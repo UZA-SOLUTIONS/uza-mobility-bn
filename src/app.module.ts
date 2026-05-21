@@ -10,6 +10,8 @@ import { HttpLoggingInterceptor } from './common/logging/http-logging.intercepto
 import { TransformResponseInterceptor } from './common/interceptors/transform-response.interceptor';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CategoriesModule } from './modules/categories/categories.module';
+import { ListingsModule } from './modules/listings/listings.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 
@@ -23,6 +25,8 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     AuthModule,
     AdminModule,
+    CategoriesModule,
+    ListingsModule,
   ],
   controllers: [AppController],
   providers: [

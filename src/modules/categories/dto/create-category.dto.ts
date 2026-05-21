@@ -1,0 +1,43 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CategoryType } from '@prisma/client';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Length,
+  Min,
+} from 'class-validator';
+
+export class CreateCategoryDto {
+  @ApiProperty({ example: 'Passenger Electric Vehicles' })
+  @IsString()
+  @Length(1, 150)
+  name!: string;
+
+  @ApiProperty({ example: 'passenger-ev' })
+  @IsString()
+  @Length(1, 100)
+  slug!: string;
+
+  @ApiProperty({ enum: CategoryType })
+  @IsEnum(CategoryType)
+  type!: CategoryType;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUrl()
+  iconUrl?: string;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  displayOrder?: number;
+}

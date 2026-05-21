@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, SellerType } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { genSaltSync, hashSync } from 'bcryptjs';
+import { seedCategories } from './seed-categories';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -221,9 +222,38 @@ async function main() {
     plainPassword: 'Password123!',
     firstName: 'Kigali',
     lastName: 'Seller',
-    roleNames: ['SELLER'],
+    roleNames: ['BUYER', 'SELLER'],
     preferredLanguage: 'en',
   });
+
+  const sellerUser = await prisma.user.findUnique({
+    where: { email: 'seller@uza.local' },
+  });
+
+  if (sellerUser) {
+    await prisma.seller.upsert({
+      where: { userId: sellerUser.id },
+      update: {
+        businessName: 'Kigali EV Motors',
+        sellerType: SellerType.LOCAL_SELLER,
+        status: 'ACTIVE',
+        country: 'RW',
+        city: 'Kigali',
+        isVerified: true,
+      },
+      create: {
+        userId: sellerUser.id,
+        businessName: 'Kigali EV Motors',
+        sellerType: SellerType.LOCAL_SELLER,
+        status: 'ACTIVE',
+        country: 'RW',
+        city: 'Kigali',
+        isVerified: true,
+      },
+    });
+  }
+
+  await seedCategories(prisma);
 
   console.log('✅ Prisma seed completed');
 }
