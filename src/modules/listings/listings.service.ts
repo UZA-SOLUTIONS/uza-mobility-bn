@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ListingStatus, Prisma, SellerType } from '@prisma/client';
+import {
+  ListingStatus,
+  NotificationType,
+  Prisma,
+  SellerType,
+} from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { generateListingSlug } from '../../common/utils/slug.util';
@@ -28,7 +33,15 @@ import {
   adminListingInclude,
   publicListingInclude,
 } from './listings.constants';
+import { NotificationsService } from '../notifications/notifications.service';
+import type { NotificationMetadata } from '../notifications/notifications.types';
 import { SearchService } from './search.service';
+
+type ListingSellerNotifyTarget = {
+  listingTitle: string;
+  slug: string;
+  seller: { userId: string };
+};
 
 @Injectable()
 export class ListingsService {
@@ -36,6 +49,7 @@ export class ListingsService {
     private readonly prisma: PrismaService,
     private readonly searchService: SearchService,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async browse(filters: FilterListingsDto) {
@@ -379,6 +393,19 @@ export class ListingsService {
       },
     });
 
+    await this.notificationsService.sendToRoleNames(
+      ['MARKETPLACE_ADMIN', 'SUPER_ADMIN'],
+      {
+        type: NotificationType.SYSTEM_ALERT,
+        title: 'Listing submitted for review',
+        body: `${updated.listingTitle} is pending approval.`,
+        metadata: {
+          listingId: updated.id,
+          slug: updated.slug,
+        },
+      },
+    );
+
     return toSellerListing(updated);
   }
 
@@ -517,6 +544,17 @@ export class ListingsService {
       },
     });
 
+    await this.notifyListingSeller(updated, {
+      type: NotificationType.LISTING_APPROVED,
+      title: 'Your listing is now live',
+      body: `${updated.listingTitle} has been published on UZA Mobility.`,
+      metadata: {
+        listingId: updated.id,
+        slug: updated.slug,
+        status: ListingStatus.PUBLISHED,
+      },
+    });
+
     return toAdminListing(updated);
   }
 
@@ -546,6 +584,17 @@ export class ListingsService {
       userAgent: auditContext.userAgent,
       metadata: {
         email: auditContext.actorEmail,
+        slug: updated.slug,
+        reason: dto.reason,
+      },
+    });
+
+    await this.notifyListingSeller(updated, {
+      type: NotificationType.LISTING_REJECTED,
+      title: 'Your listing needs changes',
+      body: `${updated.listingTitle} was not approved. Reason: ${dto.reason}`,
+      metadata: {
+        listingId: updated.id,
         slug: updated.slug,
         reason: dto.reason,
       },
@@ -633,7 +682,38 @@ export class ListingsService {
       },
     });
 
+    if (to === ListingStatus.APPROVED) {
+      await this.notifyListingSeller(updated, {
+        type: NotificationType.LISTING_APPROVED,
+        title: 'Your listing has been approved',
+        body: `${updated.listingTitle} was approved and can be published by our team.`,
+        metadata: {
+          listingId: updated.id,
+          slug: updated.slug,
+          status: to,
+        },
+      });
+    }
+
     return toAdminListing(updated);
+  }
+
+  private async notifyListingSeller(
+    listing: ListingSellerNotifyTarget,
+    input: {
+      type: NotificationType;
+      title: string;
+      body: string;
+      metadata?: NotificationMetadata;
+    },
+  ) {
+    await this.notificationsService.send({
+      userId: listing.seller.userId,
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      metadata: input.metadata,
+    });
   }
 
   private async toggleFlag(
