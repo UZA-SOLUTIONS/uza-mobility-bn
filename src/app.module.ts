@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
@@ -13,6 +14,13 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { ListingsModule } from './modules/listings/listings.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { InvoicesModule } from './modules/invoices/invoices.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { PricingModule } from './modules/pricing/pricing.module';
+import { OrdersModule } from './modules/orders/orders.module';
+import { FleetModule } from './modules/fleet/fleet.module';
+import { PartsModule } from './modules/parts/parts.module';
+import { EnergyModule } from './modules/energy/energy.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 
@@ -21,6 +29,7 @@ import { UsersModule } from './users/users.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuditModule,
     UsersModule,
@@ -29,6 +38,13 @@ import { UsersModule } from './users/users.module';
     CategoriesModule,
     ListingsModule,
     NotificationsModule,
+    PricingModule,
+    InvoicesModule,
+    PaymentsModule,
+    OrdersModule,
+    FleetModule,
+    PartsModule,
+    EnergyModule,
   ],
   controllers: [AppController],
   providers: [

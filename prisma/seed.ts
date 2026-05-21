@@ -3,6 +3,7 @@ import { PrismaClient, SellerType } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { genSaltSync, hashSync } from 'bcryptjs';
 import { seedCategories } from './seed-categories';
+import { seedPricingRules } from './seed-pricing-rules';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -117,6 +118,8 @@ async function seedPermissionsAndRoleMappings() {
     'sustainability:manage',
     'users:read',
     'users:manage-roles',
+    'parts:create',
+    'parts:manage',
   ];
 
   const permissionRecords = await Promise.all(
@@ -134,6 +137,7 @@ async function seedPermissionsAndRoleMappings() {
       'listings:delete',
       'sellers:verify',
       'sellers:suspend',
+      'parts:manage',
     ],
     FINANCE_ADMIN: [
       'invoices:read',
@@ -150,7 +154,7 @@ async function seedPermissionsAndRoleMappings() {
     SUSTAINABILITY_ADMIN: ['sustainability:read', 'sustainability:manage', 'orders:read'],
     ADVERTISING_ADMIN: ['promotions:create', 'promotions:manage', 'listings:feature'],
     SALES_AGENT: ['listings:read', 'orders:read'],
-    SELLER: ['listings:create', 'listings:read'],
+    SELLER: ['listings:create', 'listings:read', 'parts:create'],
     BUYER: ['listings:read', 'invoices:create', 'payments:submit', 'orders:read'],
   };
 
@@ -218,6 +222,42 @@ async function main() {
   });
 
   await ensureUserWithRoles({
+    email: 'logistics@uza.local',
+    plainPassword: 'Password123!',
+    firstName: 'UZA',
+    lastName: 'Logistics',
+    roleNames: ['LOGISTICS_ADMIN'],
+    preferredLanguage: 'en',
+  });
+
+  await ensureUserWithRoles({
+    email: 'fleet@uza.local',
+    plainPassword: 'Password123!',
+    firstName: 'UZA',
+    lastName: 'Fleet',
+    roleNames: ['FLEET_ADMIN'],
+    preferredLanguage: 'en',
+  });
+
+  await ensureUserWithRoles({
+    email: 'fleet-guest@uza.local',
+    plainPassword: 'Password123!',
+    firstName: 'Fleet',
+    lastName: 'Guest',
+    roleNames: ['BUYER'],
+    preferredLanguage: 'en',
+  });
+
+  await ensureUserWithRoles({
+    email: 'finance@uza.local',
+    plainPassword: 'Password123!',
+    firstName: 'UZA',
+    lastName: 'Finance',
+    roleNames: ['FINANCE_ADMIN'],
+    preferredLanguage: 'en',
+  });
+
+  await ensureUserWithRoles({
     email: 'seller@uza.local',
     plainPassword: 'Password123!',
     firstName: 'Kigali',
@@ -254,6 +294,7 @@ async function main() {
   }
 
   await seedCategories(prisma);
+  await seedPricingRules(prisma);
 
   console.log('✅ Prisma seed completed');
 }

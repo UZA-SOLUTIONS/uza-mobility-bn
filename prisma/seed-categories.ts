@@ -1,6 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 import { categorySeedData } from './categories.seed-data';
-import { generateSubcategorySlug } from '../src/common/utils/slug.util';
+import { slugifyText } from '../src/common/utils/slug.util';
+
+/** Stable slug per category + subcategory name (safe to re-run seed). */
+function subcategorySeedSlug(categorySlug: string, subName: string): string {
+  return `${categorySlug}-${slugifyText(subName)}`;
+}
 
 export async function seedCategories(prisma: PrismaClient) {
   for (const [index, category] of categorySeedData.entries()) {
@@ -22,13 +27,17 @@ export async function seedCategories(prisma: PrismaClient) {
     });
 
     for (const [subIndex, subName] of category.subcategories.entries()) {
-      const slug = generateSubcategorySlug(subName);
+      const slug = subcategorySeedSlug(savedCategory.slug, subName);
 
       await prisma.subcategory.upsert({
-        where: { slug },
+        where: {
+          categoryId_name: {
+            categoryId: savedCategory.id,
+            name: subName,
+          },
+        },
         update: {
-          name: subName,
-          categoryId: savedCategory.id,
+          slug,
           isActive: true,
           displayOrder: subIndex,
         },
