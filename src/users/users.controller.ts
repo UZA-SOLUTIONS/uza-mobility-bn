@@ -17,16 +17,17 @@ import {
   ApiTags,
   PartialType,
 } from '@nestjs/swagger';
+import { SkipAudit } from '../common/audit/decorators/skip-audit.decorator';
+import { getRequestAuditContext } from '../common/audit/request-context.util';
 import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
 import { CreateSellerProfileDto } from './dto/create-seller-profile.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
-import type { Request } from 'express';
-import { JwtAuthGuard } from '../modules/auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../modules/auth/guards/permissions.guard';
 import { RequirePermission } from '../modules/auth/decorators/permissions.decorator';
 import { RolesGuard } from '../modules/auth/guards/roles.guard';
 import { Roles } from '../modules/auth/decorators/roles.decorator';
+import type { AuthenticatedRequest } from './users.types';
 
 class UpdateBuyerProfileDto extends PartialType(CreateBuyerProfileDto) {}
 class UpdateSellerProfileDto extends PartialType(CreateSellerProfileDto) {}
@@ -38,99 +39,103 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post('buyer-profile')
-  @UseGuards(JwtAuthGuard)
+  @SkipAudit()
   @ApiOperation({ summary: 'Create buyer profile' })
   @ApiOkResponse({ description: 'Created buyer profile' })
   createBuyerProfile(
-    @Req() request: Request,
+    @Req() request: AuthenticatedRequest,
     @Body() dto: CreateBuyerProfileDto,
   ) {
-    const user = request.user as { sub: string } | undefined;
-    if (!user?.sub) {
+    if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
-    return this.usersService.createBuyerProfile(user.sub, dto);
+    return this.usersService.createBuyerProfile(
+      request.user.sub,
+      dto,
+      getRequestAuditContext(request),
+    );
   }
 
   @Get('buyer-profile')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get own buyer profile' })
   @ApiOkResponse({ description: 'Buyer profile' })
-  getBuyerProfile(@Req() request: Request) {
-    const user = request.user as { sub: string } | undefined;
-    if (!user?.sub) {
+  getBuyerProfile(@Req() request: AuthenticatedRequest) {
+    if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
-    return this.usersService.getBuyerProfile(user.sub);
+    return this.usersService.getBuyerProfile(request.user.sub);
   }
 
   @Patch('buyer-profile')
-  @UseGuards(JwtAuthGuard)
+  @SkipAudit()
   @ApiOperation({ summary: 'Update buyer profile' })
   @ApiOkResponse({ description: 'Updated buyer profile' })
   updateBuyerProfile(
-    @Req() request: Request,
+    @Req() request: AuthenticatedRequest,
     @Body() dto: UpdateBuyerProfileDto,
   ) {
-    const user = request.user as { sub: string } | undefined;
-
-    if (!user?.sub) {
+    if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
 
-    return this.usersService.updateBuyerProfile(user.sub, dto);
+    return this.usersService.updateBuyerProfile(
+      request.user.sub,
+      dto,
+      getRequestAuditContext(request),
+    );
   }
 
   @Get('seller-profile')
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get own seller profile' })
   @ApiOkResponse({ description: 'Seller profile' })
-  getSellerProfile(@Req() request: Request) {
-    const user = request.user as { sub: string } | undefined;
-
-    if (!user?.sub) {
+  getSellerProfile(@Req() request: AuthenticatedRequest) {
+    if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
 
-    return this.usersService.getSellerProfile(user.sub);
+    return this.usersService.getSellerProfile(request.user.sub);
   }
 
   @Post('seller-profile')
-  @UseGuards(JwtAuthGuard)
+  @SkipAudit()
   @ApiOperation({ summary: 'Create seller profile' })
   @ApiOkResponse({ description: 'Created seller profile' })
   createSellerProfile(
-    @Req() request: Request,
+    @Req() request: AuthenticatedRequest,
     @Body() dto: CreateSellerProfileDto,
   ) {
-    const user = request.user as { sub: string } | undefined;
-
-    if (!user?.sub) {
+    if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
 
-    return this.usersService.createSellerProfile(user.sub, dto);
+    return this.usersService.createSellerProfile(
+      request.user.sub,
+      dto,
+      getRequestAuditContext(request),
+    );
   }
 
   @Patch('seller-profile')
-  @UseGuards(JwtAuthGuard)
+  @SkipAudit()
   @ApiOperation({ summary: 'Update seller profile' })
   @ApiOkResponse({ description: 'Updated seller profile' })
   updateSellerProfile(
-    @Req() request: Request,
+    @Req() request: AuthenticatedRequest,
     @Body() dto: UpdateSellerProfileDto,
   ) {
-    const user = request.user as { sub: string } | undefined;
-
-    if (!user?.sub) {
+    if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
 
-    return this.usersService.updateSellerProfile(user.sub, dto);
+    return this.usersService.updateSellerProfile(
+      request.user.sub,
+      dto,
+      getRequestAuditContext(request),
+    );
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(RolesGuard)
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'List all users' })
   @ApiOkResponse({ description: 'All users' })
@@ -139,7 +144,8 @@ export class UsersController {
   }
 
   @Patch(':id/roles')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @SkipAudit()
+  @UseGuards(PermissionsGuard)
   @RequirePermission('users:manage-roles')
   @ApiOperation({ summary: 'Assign roles to a user' })
   @ApiBody({
@@ -149,16 +155,33 @@ export class UsersController {
     },
   })
   @ApiOkResponse({ description: 'Updated user roles' })
-  updateUserRoles(@Param('id') id: string, @Body('roles') roles: string[]) {
-    return this.usersService.updateUserRoles(id, roles);
+  updateUserRoles(
+    @Param('id') id: string,
+    @Body('roles') roles: string[],
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.usersService.updateUserRoles(
+      id,
+      roles,
+      request.user?.sub,
+      getRequestAuditContext(request),
+    );
   }
 
   @Patch(':id/deactivate')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @SkipAudit()
+  @UseGuards(RolesGuard)
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Deactivate user' })
   @ApiOkResponse({ description: 'Deactivated user' })
-  deactivateUser(@Param('id') id: string) {
-    return this.usersService.deactivateUser(id);
+  deactivateUser(
+    @Param('id') id: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.usersService.deactivateUser(
+      id,
+      request.user?.sub,
+      getRequestAuditContext(request),
+    );
   }
 }

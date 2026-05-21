@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AuditService } from '../common/audit/audit.service';
+import type { RequestAuditContext } from '../common/audit/request-context.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
 import { CreateSellerProfileDto } from './dto/create-seller-profile.dto';
@@ -17,7 +19,10 @@ type UserWithRelations = Prisma.UserGetPayload<{
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async findByEmail(email: string): Promise<UserWithRelations | null> {
     return this.prisma.user.findUnique({
@@ -75,7 +80,11 @@ export class UsersService {
     return this.toSafeUser(created);
   }
 
-  async updateMe(userId: string, dto: UpdateUserDto): Promise<SafeUser> {
+  async updateMe(
+    userId: string,
+    dto: UpdateUserDto,
+    auditContext: RequestAuditContext = {},
+  ): Promise<SafeUser> {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: dto,
@@ -88,10 +97,28 @@ export class UsersService {
       },
     });
 
-    return this.toSafeUser(updated);
+    const safeUser = this.toSafeUser(updated);
+
+    await this.auditService.record({
+      userId,
+      action: 'users:profile-updated',
+      entity: 'User',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        email: auditContext.actorEmail ?? safeUser.email,
+        fields: Object.keys(dto),
+      },
+    });
+
+    return safeUser;
   }
 
-  async createBuyerProfile(userId: string, dto: CreateBuyerProfileDto) {
+  async createBuyerProfile(
+    userId: string,
+    dto: CreateBuyerProfileDto,
+    auditContext: RequestAuditContext = {},
+  ) {
     const existing = await this.prisma.buyerProfile.findUnique({
       where: { userId },
     });
@@ -100,7 +127,7 @@ export class UsersService {
       throw new ConflictException('Buyer profile already exists');
     }
 
-    return this.prisma.buyerProfile.create({
+    const profile = await this.prisma.buyerProfile.create({
       data: {
         userId,
         buyerType: dto.buyerType as never,
@@ -113,11 +140,54 @@ export class UsersService {
         passportNumber: dto.passportNumber,
       },
     });
+
+    await this.auditService.record({
+      userId,
+      action: 'users:buyer-profile-created',
+      entity: 'BuyerProfile',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        email: auditContext.actorEmail,
+        buyerType: profile.buyerType,
+      },
+    });
+
+    return profile;
   }
 
-  async createSellerProfile(userId: string, dto: CreateSellerProfileDto) {
-    await this.addRoleIfMissing(userId, 'SELLER');
+  async getMeProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        roles: {
+          include: {
+            role: true,
+          },
+        },
+        buyerProfile: true,
+        seller: true,
+      },
+    });
 
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const { buyerProfile, seller, ...userRecord } = user;
+
+    return {
+      ...this.toSafeUser(userRecord),
+      buyerProfile,
+      seller,
+    };
+  }
+
+  async createSellerProfile(
+    userId: string,
+    dto: CreateSellerProfileDto,
+    auditContext: RequestAuditContext = {},
+  ) {
     const existing = await this.prisma.seller.findUnique({
       where: { userId },
     });
@@ -126,7 +196,9 @@ export class UsersService {
       throw new ConflictException('Seller profile already exists');
     }
 
-    return this.prisma.seller.create({
+    await this.ensureRoleAdded(userId, 'SELLER');
+
+    const seller = await this.prisma.seller.create({
       data: {
         userId,
         sellerType: dto.sellerType,
@@ -143,6 +215,21 @@ export class UsersService {
         description: dto.description,
       },
     });
+
+    await this.auditService.record({
+      userId,
+      action: 'users:seller-profile-created',
+      entity: 'Seller',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        email: auditContext.actorEmail,
+        sellerType: seller.sellerType,
+        businessName: seller.businessName,
+      },
+    });
+
+    return seller;
   }
 
   async getBuyerProfile(userId: string) {
@@ -172,6 +259,7 @@ export class UsersService {
   async updateBuyerProfile(
     userId: string,
     dto: Partial<CreateBuyerProfileDto>,
+    auditContext: RequestAuditContext = {},
   ) {
     const existing = await this.prisma.buyerProfile.findUnique({
       where: { userId },
@@ -181,7 +269,7 @@ export class UsersService {
       throw new NotFoundException('Buyer profile not found');
     }
 
-    return this.prisma.buyerProfile.update({
+    const profile = await this.prisma.buyerProfile.update({
       where: { userId },
       data: {
         buyerType: dto.buyerType as never,
@@ -194,11 +282,26 @@ export class UsersService {
         passportNumber: dto.passportNumber,
       },
     });
+
+    await this.auditService.record({
+      userId,
+      action: 'users:buyer-profile-updated',
+      entity: 'BuyerProfile',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        email: auditContext.actorEmail,
+        fields: Object.keys(dto),
+      },
+    });
+
+    return profile;
   }
 
   async updateSellerProfile(
     userId: string,
     dto: Partial<CreateSellerProfileDto>,
+    auditContext: RequestAuditContext = {},
   ) {
     const existing = await this.prisma.seller.findUnique({
       where: { userId },
@@ -208,7 +311,7 @@ export class UsersService {
       throw new NotFoundException('Seller profile not found');
     }
 
-    return this.prisma.seller.update({
+    const seller = await this.prisma.seller.update({
       where: { userId },
       data: {
         sellerType: dto.sellerType,
@@ -225,11 +328,27 @@ export class UsersService {
         description: dto.description,
       },
     });
+
+    await this.auditService.record({
+      userId,
+      action: 'users:seller-profile-updated',
+      entity: 'Seller',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        email: auditContext.actorEmail,
+        fields: Object.keys(dto),
+      },
+    });
+
+    return seller;
   }
 
   async updateUserRoles(
     userId: string,
     roleNames: string[],
+    performedBy?: string,
+    auditContext: RequestAuditContext = {},
   ): Promise<SafeUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -246,32 +365,84 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    const existingRoleNames = user.roles.map((userRole) => userRole.role.name);
+    const finalRoleNames = [...roleNames];
+
+    if (
+      existingRoleNames.includes('BUYER') &&
+      !finalRoleNames.includes('BUYER')
+    ) {
+      finalRoleNames.push('BUYER');
+    }
+
     const roles = await this.prisma.role.findMany({
-      where: { name: { in: roleNames } },
+      where: { name: { in: finalRoleNames } },
     });
 
-    if (roles.length !== roleNames.length) {
+    if (roles.length !== finalRoleNames.length) {
       throw new BadRequestException('One or more roles do not exist');
     }
 
-    await this.prisma.userRole.deleteMany({ where: { userId } });
-    await this.prisma.userRole.createMany({
-      data: roles.map((role) => ({
-        userId,
-        roleId: role.id,
-      })),
-    });
+    let performerEmail = auditContext.actorEmail;
 
-    const updated = await this.findById(userId);
-
-    if (!updated) {
-      throw new NotFoundException('User not found');
+    if (!performerEmail && performedBy) {
+      const performer = await this.prisma.user.findUnique({
+        where: { id: performedBy },
+        select: { email: true },
+      });
+      performerEmail = performer?.email;
     }
 
-    return this.toSafeUser(updated);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.userRole.deleteMany({ where: { userId } });
+      await tx.userRole.createMany({
+        data: roles.map((role) => ({
+          userId,
+          roleId: role.id,
+        })),
+      });
+
+      await tx.refreshToken.deleteMany({ where: { userId } });
+
+      await this.auditService.record(
+        {
+          userId: performedBy ?? null,
+          action: 'users:roles-updated',
+          entity: 'User',
+          ipAddress: auditContext.ipAddress,
+          userAgent: auditContext.userAgent,
+          metadata: {
+            performerEmail,
+            targetEmail: user.email,
+            previousRoles: existingRoleNames,
+            newRoles: finalRoleNames,
+          },
+        },
+        tx,
+      );
+
+      const refreshed = await tx.user.findUnique({
+        where: { id: userId },
+        include: {
+          roles: {
+            include: {
+              role: true,
+            },
+          },
+        },
+      });
+
+      if (!refreshed) {
+        throw new NotFoundException('User not found');
+      }
+
+      return this.toSafeUser(refreshed);
+    });
+
+    return updated;
   }
 
-  async addRoleIfMissing(userId: string, roleName: string): Promise<SafeUser> {
+  async ensureRoleAdded(userId: string, roleName: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { roles: { include: { role: true } } },
@@ -284,7 +455,7 @@ export class UsersService {
     const already = user.roles.some((ur) => ur.role.name === roleName);
 
     if (already) {
-      throw new ConflictException('User already has this role');
+      return;
     }
 
     const role = await this.prisma.role.findUnique({
@@ -296,35 +467,64 @@ export class UsersService {
     }
 
     await this.prisma.userRole.create({ data: { userId, roleId: role.id } });
+  }
 
-    const updated = await this.findById(userId);
+  async deactivateUser(
+    userId: string,
+    performedBy?: string,
+    auditContext: RequestAuditContext = {},
+  ): Promise<SafeUser> {
+    let performerEmail = auditContext.actorEmail;
 
-    if (!updated) {
-      throw new NotFoundException('User not found');
+    if (!performerEmail && performedBy) {
+      const performer = await this.prisma.user.findUnique({
+        where: { id: performedBy },
+        select: { email: true },
+      });
+      performerEmail = performer?.email;
     }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: {
+          isActive: false,
+          deletedAt: new Date(),
+        },
+        include: {
+          roles: {
+            include: {
+              role: true,
+            },
+          },
+        },
+      });
+
+      await tx.refreshToken.deleteMany({ where: { userId } });
+
+      await this.auditService.record(
+        {
+          userId: performedBy ?? null,
+          action: 'users:deactivated',
+          entity: 'User',
+          ipAddress: auditContext.ipAddress,
+          userAgent: auditContext.userAgent,
+          metadata: {
+            performerEmail,
+            targetEmail: user.email,
+          },
+        },
+        tx,
+      );
+
+      return user;
+    });
 
     return this.toSafeUser(updated);
   }
 
-  async deactivateUser(userId: string): Promise<SafeUser> {
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        isActive: false,
-        deletedAt: new Date(),
-      },
-      include: {
-        roles: {
-          include: {
-            role: true,
-          },
-        },
-      },
-    });
-
+  async invalidateUserSessions(userId: string): Promise<void> {
     await this.prisma.refreshToken.deleteMany({ where: { userId } });
-
-    return this.toSafeUser(updated);
   }
 
   async ensureUserExists(userId: string): Promise<SafeUser> {

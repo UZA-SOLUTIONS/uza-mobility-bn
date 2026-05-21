@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { RbacService } from '../rbac.service';
+import type { JwtUserPayload } from '../../../users/users.types';
 
 @Injectable()
 export class JwtRefreshStrategy extends PassportStrategy(
@@ -12,6 +14,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly rbacService: RbacService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -22,9 +25,15 @@ export class JwtRefreshStrategy extends PassportStrategy(
 
   async validate(payload: {
     sub: string;
+    email?: string;
     tokenType?: string;
-    permissions?: string[];
-  }) {
+    iat?: number;
+    exp?: number;
+  }): Promise<JwtUserPayload | null> {
+    if (payload.tokenType !== 'refresh') {
+      return null;
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: {
@@ -36,10 +45,22 @@ export class JwtRefreshStrategy extends PassportStrategy(
       },
     });
 
-    if (!user || !user.isActive || payload.tokenType !== 'refresh') {
+    if (!user || !user.isActive || user.deletedAt) {
       return null;
     }
 
-    return payload;
+    const roles = user.roles.map((userRole) => userRole.role.name);
+    const permissions =
+      await this.rbacService.resolvePermissionsForRoleNames(roles);
+
+    return {
+      sub: user.id,
+      email: user.email,
+      roles,
+      permissions,
+      tokenType: 'refresh',
+      iat: payload.iat ?? 0,
+      exp: payload.exp ?? 0,
+    };
   }
 }

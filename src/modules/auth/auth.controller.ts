@@ -7,7 +7,6 @@ import {
   Post,
   Req,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -15,17 +14,17 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-
+import { SkipAudit } from '../../common/audit/decorators/skip-audit.decorator';
+import { getRequestAuditContext } from '../../common/audit/request-context.util';
 import { Public } from './decorators/public.decorator';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
-
 import { RegisterDto } from './dto/register.dto';
 import { AuthService } from './auth.service';
 import { UsersService } from '../../users/users.service';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
+import { extractBearerToken } from './utils/extract-bearer-token.util';
+import type { AuthenticatedRequest } from '../../users/users.types';
 import type { Request } from 'express';
 
 @ApiTags('auth')
@@ -38,87 +37,80 @@ export class AuthController {
 
   @Post('register')
   @Public()
+  @SkipAudit()
   @ApiOperation({ summary: 'Register a new user' })
   @ApiOkResponse({ type: AuthResponseDto })
-  register(@Body() dto: RegisterDto): Promise<AuthResponseDto> {
-    return this.authService.register(dto);
+  register(@Body() dto: RegisterDto, @Req() request: Request) {
+    return this.authService.register(dto, getRequestAuditContext(request));
   }
 
   @Post('login')
   @Public()
+  @SkipAudit()
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiOkResponse({ type: AuthResponseDto })
-  login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
-    return this.authService.login(dto);
+  login(@Body() dto: LoginDto, @Req() request: Request) {
+    return this.authService.login(dto, getRequestAuditContext(request));
   }
 
   @Post('refresh')
-  @UseGuards(JwtRefreshGuard)
+  @Public()
   @ApiBearerAuth('JWT-refresh')
   @ApiOperation({
     summary: 'Refresh access token (use refresh token in Authorization header)',
   })
   @ApiOkResponse({ type: AuthResponseDto })
-  async refresh(
+  refresh(
     @Headers('authorization') authHeader: string,
   ): Promise<AuthResponseDto> {
-    const token = authHeader?.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : authHeader;
-    if (!token) {
-      throw new Error('No refresh token provided in Authorization header');
-    }
-
-    const result = await this.authService.refresh(token);
-    return result;
+    const token = extractBearerToken(authHeader, 'refresh token');
+    return this.authService.refresh(token);
   }
 
   @Post('logout')
-  @UseGuards(JwtRefreshGuard)
+  @Public()
+  @SkipAudit()
   @ApiBearerAuth('JWT-refresh')
   @ApiOperation({ summary: 'Logout by invalidating the refresh token' })
   @ApiOkResponse({ description: 'Refresh token invalidated' })
   async logout(
     @Headers('authorization') authHeader: string,
+    @Req() request: Request,
   ): Promise<{ message: string }> {
-    const token = authHeader?.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : authHeader;
-    if (!token) {
-      throw new Error('No refresh token provided in Authorization header');
-    }
-
-    await this.authService.logout(token);
+    const token = extractBearerToken(authHeader, 'refresh token');
+    await this.authService.logout(token, getRequestAuditContext(request));
     return { message: 'Logged out successfully' };
   }
 
   @Get('me')
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-access')
   @ApiOperation({ summary: 'Get the authenticated user profile' })
   @ApiOkResponse({ description: 'Authenticated user profile' })
-  async me(@Req() request: Request) {
-    const user = request.user as { sub?: string } | undefined;
-
-    if (!user?.sub) {
+  async me(@Req() request: AuthenticatedRequest) {
+    if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
 
-    return this.authService.me(user.sub);
+    return this.authService.me(request.user.sub);
   }
 
   @Patch('me')
-  @UseGuards(JwtAuthGuard)
+  @SkipAudit()
   @ApiBearerAuth('JWT-access')
   @ApiOperation({ summary: 'Update the authenticated user profile' })
   @ApiOkResponse({ description: 'Updated user profile' })
-  async updateMe(@Req() request: Request, @Body() dto: UpdateUserDto) {
-    const user = request.user as { sub?: string } | undefined;
-
-    if (!user?.sub) {
+  async updateMe(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: UpdateUserDto,
+  ) {
+    if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
 
-    return this.usersService.updateMe(user.sub, dto);
+    return this.usersService.updateMe(
+      request.user.sub,
+      dto,
+      getRequestAuditContext(request),
+    );
   }
 }
