@@ -2,16 +2,13 @@ import {
   Body,
   Controller,
   Get,
-  Param,
   Patch,
   Post,
   Req,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiBody,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -23,10 +20,6 @@ import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
 import { CreateSellerProfileDto } from './dto/create-seller-profile.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
-import { PermissionsGuard } from '../modules/auth/guards/permissions.guard';
-import { RequirePermission } from '../modules/auth/decorators/permissions.decorator';
-import { RolesGuard } from '../modules/auth/guards/roles.guard';
-import { Roles } from '../modules/auth/decorators/roles.decorator';
 import type { AuthenticatedRequest } from './users.types';
 
 class UpdateBuyerProfileDto extends PartialType(CreateBuyerProfileDto) {}
@@ -130,57 +123,6 @@ export class UsersController {
     return this.usersService.updateSellerProfile(
       request.user.sub,
       dto,
-      getRequestAuditContext(request),
-    );
-  }
-
-  @Get()
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
-  @ApiOperation({ summary: 'List all users' })
-  @ApiOkResponse({ description: 'All users' })
-  listAllUsers() {
-    return this.usersService.findAll();
-  }
-
-  @Patch(':id/roles')
-  @SkipAudit()
-  @UseGuards(PermissionsGuard)
-  @RequirePermission('users:manage-roles')
-  @ApiOperation({ summary: 'Assign roles to a user' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: { roles: { type: 'array', items: { type: 'string' } } },
-    },
-  })
-  @ApiOkResponse({ description: 'Updated user roles' })
-  updateUserRoles(
-    @Param('id') id: string,
-    @Body('roles') roles: string[],
-    @Req() request: AuthenticatedRequest,
-  ) {
-    return this.usersService.updateUserRoles(
-      id,
-      roles,
-      request.user?.sub,
-      getRequestAuditContext(request),
-    );
-  }
-
-  @Patch(':id/deactivate')
-  @SkipAudit()
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
-  @ApiOperation({ summary: 'Deactivate user' })
-  @ApiOkResponse({ description: 'Deactivated user' })
-  deactivateUser(
-    @Param('id') id: string,
-    @Req() request: AuthenticatedRequest,
-  ) {
-    return this.usersService.deactivateUser(
-      id,
-      request.user?.sub,
       getRequestAuditContext(request),
     );
   }

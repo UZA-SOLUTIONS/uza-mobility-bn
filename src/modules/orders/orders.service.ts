@@ -14,7 +14,7 @@ import { FilterOrdersDto } from './dto/filter-orders.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { orderDetailInclude } from './orders.constants';
 import { getNextOrderStatus, ORDER_STAGES, STAGE_LABELS } from './order-stages';
-import { SustainabilityService } from './sustainability.service';
+import { SustainabilityService } from '../sustainability/sustainability.service';
 
 @Injectable()
 export class OrdersService {

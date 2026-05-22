@@ -45,6 +45,7 @@ import {
   toPricingInput,
 } from './listing-pricing.util';
 import type { CreateListingPricingDto } from './dto/create-listing-pricing.dto';
+import { PromotionsService } from '../promotions/promotions.service';
 import { SearchService } from './search.service';
 
 type ListingSellerNotifyTarget = {
@@ -62,7 +63,21 @@ export class ListingsService {
     private readonly notificationsService: NotificationsService,
     private readonly sellersService: SellersService,
     private readonly pricingService: PricingService,
+    private readonly promotionsService: PromotionsService,
   ) {}
+
+  private async mapPublicListings<
+    T extends Parameters<typeof toPublicListing>[0],
+  >(rows: T[]) {
+    const promotionMap =
+      await this.promotionsService.getBestDisplayByListingIds(
+        rows.map((r) => r.id),
+      );
+
+    return rows.map((row) =>
+      toPublicListing(row, promotionMap.get(row.id) ?? null),
+    );
+  }
 
   async browse(filters: FilterListingsDto) {
     const page = filters.page ?? 1;
@@ -82,7 +97,7 @@ export class ListingsService {
     ]);
 
     return {
-      items: rows.map((row) => toPublicListing(row)),
+      items: await this.mapPublicListings(rows),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) || 1 },
     };
   }
@@ -104,7 +119,26 @@ export class ListingsService {
       include: publicListingInclude,
     });
 
-    return rows.map((row) => toPublicListing(row));
+    return this.mapPublicListings(rows);
+  }
+
+  async recentlyReduced() {
+    const ids = await this.promotionsService.findRecentlyReducedListingIds();
+    if (ids.length === 0) return [];
+
+    const rows = await this.prisma.listing.findMany({
+      where: {
+        id: { in: ids },
+        status: ListingStatus.PUBLISHED,
+        deletedAt: null,
+      },
+      include: publicListingInclude,
+    });
+
+    const order = new Map(ids.map((id, index) => [id, index]));
+    rows.sort((a, b) => (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999));
+
+    return this.mapPublicListings(rows);
   }
 
   featured() {
@@ -146,9 +180,16 @@ export class ListingsService {
       throw new NotFoundException('Listing not found');
     }
 
+    const promotionDisplay =
+      listing.listingPricing?.finalPriceUsd != null
+        ? await this.promotionsService.getBestDisplayForListing(
+            listing.id,
+            listing.listingPricing.finalPriceUsd,
+          )
+        : null;
+
     if (listing.status === ListingStatus.SOLD) {
-      // Sold listings stay visible; do not increment views as active inventory
-      return toPublicListing(listing);
+      return toPublicListing(listing, promotionDisplay);
     }
 
     await this.prisma.listing.update({
@@ -156,7 +197,10 @@ export class ListingsService {
       data: { viewCount: { increment: 1 } },
     });
 
-    return toPublicListing({ ...listing, viewCount: listing.viewCount + 1 });
+    return toPublicListing(
+      { ...listing, viewCount: listing.viewCount + 1 },
+      promotionDisplay,
+    );
   }
 
   async createForSeller(

@@ -22,6 +22,9 @@ import { FleetModule } from './modules/fleet/fleet.module';
 import { PartsModule } from './modules/parts/parts.module';
 import { EnergyModule } from './modules/energy/energy.module';
 import { SellersModule } from './modules/sellers/sellers.module';
+import { PromotionsModule } from './modules/promotions/promotions.module';
+import { SustainabilityModule } from './modules/sustainability/sustainability.module';
+import { FinancingModule } from './modules/financing/financing.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 
@@ -47,6 +50,9 @@ import { UsersModule } from './users/users.module';
     PartsModule,
     EnergyModule,
     SellersModule,
+    PromotionsModule,
+    SustainabilityModule,
+    FinancingModule,
   ],
   controllers: [AppController],
   providers: [

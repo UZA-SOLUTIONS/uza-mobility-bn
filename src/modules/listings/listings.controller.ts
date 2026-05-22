@@ -63,6 +63,16 @@ export class ListingsController {
     return this.listingsService.localStock();
   }
 
+  @Get('recently-reduced')
+  @Public()
+  @SkipAudit()
+  @ApiOperation({
+    summary: 'Published listings with active discount promotions',
+  })
+  recentlyReduced() {
+    return this.listingsService.recentlyReduced();
+  }
+
   @Get('my')
   @ApiBearerAuth('JWT-access')
   @UseGuards(RolesGuard)

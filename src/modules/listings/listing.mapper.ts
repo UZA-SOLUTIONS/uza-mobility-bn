@@ -1,4 +1,5 @@
 import { Listing, ListingPricing, ListingStatus, Prisma } from '@prisma/client';
+import type { PromotionPriceDisplay } from '../promotions/promotion-display.util';
 
 type ListingWithRelations = Prisma.ListingGetPayload<{
   include: {
@@ -42,7 +43,10 @@ export function toPublicPricing(pricing: ListingPricing | null) {
   return publicPricing;
 }
 
-export function toPublicListing<T extends ListingWithRelations>(listing: T) {
+export function toPublicListing<T extends ListingWithRelations>(
+  listing: T,
+  promotionDisplay?: PromotionPriceDisplay | null,
+) {
   const {
     adminNotes: _adminNotes,
     listingPricing,
@@ -57,6 +61,7 @@ export function toPublicListing<T extends ListingWithRelations>(listing: T) {
     ...rest,
     listingPricing: toPublicPricing(listingPricing),
     displayBadge: getPublicDisplayBadge(rest.status),
+    ...(promotionDisplay ? { promotionDisplay } : {}),
   };
 }
 

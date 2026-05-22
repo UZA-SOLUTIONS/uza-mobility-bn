@@ -120,6 +120,7 @@ async function seedPermissionsAndRoleMappings() {
     'users:manage-roles',
     'parts:create',
     'parts:manage',
+    'financing:submit',
   ];
 
   const permissionRecords = await Promise.all(
@@ -155,7 +156,13 @@ async function seedPermissionsAndRoleMappings() {
     ADVERTISING_ADMIN: ['promotions:create', 'promotions:manage', 'listings:feature'],
     SALES_AGENT: ['listings:read', 'orders:read'],
     SELLER: ['listings:create', 'listings:read', 'parts:create'],
-    BUYER: ['listings:read', 'invoices:create', 'payments:submit', 'orders:read'],
+    BUYER: [
+      'listings:read',
+      'invoices:create',
+      'payments:submit',
+      'orders:read',
+      'financing:submit',
+    ],
   };
 
   const allActionToRecord = new Map(
