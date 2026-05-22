@@ -35,6 +35,16 @@ import {
 } from './listings.constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { NotificationMetadata } from '../notifications/notifications.types';
+import { PricingService } from '../pricing/pricing.service';
+import { SellersService } from '../sellers/sellers.service';
+import {
+  assertListingPricingInput,
+  breakdownToListingPricingCreate,
+  deliveryDaysFromBreakdown,
+  mergeListingPricingInput,
+  toPricingInput,
+} from './listing-pricing.util';
+import type { CreateListingPricingDto } from './dto/create-listing-pricing.dto';
 import { SearchService } from './search.service';
 
 type ListingSellerNotifyTarget = {
@@ -50,6 +60,8 @@ export class ListingsService {
     private readonly searchService: SearchService,
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
+    private readonly sellersService: SellersService,
+    private readonly pricingService: PricingService,
   ) {}
 
   async browse(filters: FilterListingsDto) {
@@ -154,7 +166,7 @@ export class ListingsService {
   ) {
     this.assertSellerAllowedListingType(dto.sellerType);
 
-    const seller = await this.getSellerForUser(userId);
+    const seller = await this.sellersService.assertSellerCanTrade(userId);
     await this.validateCategoryRefs(dto.categoryId, dto.subcategoryId);
 
     const slug = generateListingSlug(
@@ -163,8 +175,21 @@ export class ListingsService {
       dto.manufacturingYear,
     );
 
+    const { pricing: pricingCreate, deliveryDaysMax } =
+      await this.resolveListingPricing(
+        dto.sellerType,
+        dto.country,
+        dto.pricing,
+      );
+
     const listing = await this.prisma.listing.create({
-      data: this.buildListingCreateData(seller.id, slug, dto),
+      data: this.buildListingCreateData(
+        seller.id,
+        slug,
+        dto,
+        pricingCreate,
+        deliveryDaysMax,
+      ),
       include: publicListingInclude,
     });
 
@@ -208,9 +233,22 @@ export class ListingsService {
       dto.manufacturingYear,
     );
 
+    const { pricing: pricingCreate, deliveryDaysMax } =
+      await this.resolveListingPricing(
+        dto.sellerType,
+        dto.country,
+        dto.pricing,
+      );
+
     const listing = await this.prisma.listing.create({
       data: {
-        ...this.buildListingCreateData(seller.id, slug, dto),
+        ...this.buildListingCreateData(
+          seller.id,
+          slug,
+          dto,
+          pricingCreate,
+          deliveryDaysMax,
+        ),
         status: initialStatus,
         publishedAt:
           initialStatus === ListingStatus.PUBLISHED ? new Date() : undefined,
@@ -237,7 +275,7 @@ export class ListingsService {
   }
 
   async findMine(userId: string) {
-    const seller = await this.getSellerForUser(userId);
+    const seller = await this.resolveSellerForUser(userId);
 
     const rows = await this.prisma.listing.findMany({
       where: { sellerId: seller.id, deletedAt: null },
@@ -254,6 +292,7 @@ export class ListingsService {
     dto: UpdateListingDto,
     auditContext: RequestAuditContext = {},
   ) {
+    await this.sellersService.assertSellerCanTrade(userId);
     const listing = await this.getOwnedListing(userId, listingId);
 
     if (
@@ -276,21 +315,48 @@ export class ListingsService {
       );
     }
 
+    const sellerType = dto.sellerType ?? listing.sellerType;
+    const country = dto.country ?? listing.country;
+    let pricingCreate:
+      | Prisma.ListingPricingCreateWithoutListingInput
+      | undefined;
+    let deliveryDaysFromPricing: number | undefined;
+
+    if (dto.pricing) {
+      const existingPricing = await this.prisma.listingPricing.findUnique({
+        where: { listingId },
+      });
+      const resolved = await this.resolveListingPricing(
+        sellerType,
+        country,
+        dto.pricing,
+        existingPricing,
+      );
+      pricingCreate = resolved.pricing;
+      deliveryDaysFromPricing = resolved.deliveryDaysMax;
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const core = await tx.listing.update({
         where: { id: listingId },
-        data: this.buildListingUpdateData(dto),
+        data: {
+          ...this.buildListingUpdateData(dto),
+          ...(deliveryDaysFromPricing !== undefined &&
+          dto.deliveryEstimateDays === undefined
+            ? { deliveryEstimateDays: deliveryDaysFromPricing }
+            : {}),
+        },
         include: publicListingInclude,
       });
 
-      if (dto.pricing) {
+      if (pricingCreate) {
         await tx.listingPricing.upsert({
           where: { listingId },
           create: {
             listingId,
-            ...this.buildPricingData(dto.pricing),
+            ...pricingCreate,
           },
-          update: this.buildPricingData(dto.pricing),
+          update: pricingCreate,
         });
       }
 
@@ -332,6 +398,7 @@ export class ListingsService {
     listingId: string,
     auditContext: RequestAuditContext = {},
   ) {
+    await this.sellersService.assertSellerCanTrade(userId);
     const listing = await this.getOwnedListing(userId, listingId);
 
     if (listing.status !== ListingStatus.DRAFT) {
@@ -361,6 +428,7 @@ export class ListingsService {
     listingId: string,
     auditContext: RequestAuditContext = {},
   ) {
+    await this.sellersService.assertSellerCanTrade(userId);
     const listing = await this.getOwnedListing(userId, listingId);
 
     this.assertTransition(listing.status, ListingStatus.PENDING_REVIEW);
@@ -415,6 +483,7 @@ export class ListingsService {
     dto: AddListingPhotosDto,
     auditContext: RequestAuditContext = {},
   ) {
+    await this.sellersService.assertSellerCanTrade(userId);
     const listing = await this.getOwnedListing(userId, listingId);
 
     if (
@@ -747,10 +816,46 @@ export class ListingsService {
     return toAdminListing(updated);
   }
 
+  private async resolveListingPricing(
+    sellerType: SellerType,
+    originCountry: string | undefined,
+    partial: CreateListingPricingDto,
+    existing?: {
+      basePriceUsd: number | null;
+      fobPriceUsd: number | null;
+      sellerDesiredPayoutUsd: number | null;
+      discountUsd: number | null;
+    } | null,
+  ): Promise<{
+    pricing: Prisma.ListingPricingCreateWithoutListingInput;
+    deliveryDaysMax: number;
+  }> {
+    const input = existing
+      ? mergeListingPricingInput(sellerType, partial, existing)
+      : partial;
+
+    if (!existing) {
+      assertListingPricingInput(sellerType, input);
+    }
+
+    const breakdown = await this.pricingService.calculatePrice(
+      sellerType,
+      toPricingInput(input),
+      originCountry,
+    );
+
+    return {
+      pricing: breakdownToListingPricingCreate(breakdown),
+      deliveryDaysMax: deliveryDaysFromBreakdown(breakdown),
+    };
+  }
+
   private buildListingCreateData(
     sellerId: string,
     slug: string,
     dto: CreateListingDto,
+    pricingCreate: Prisma.ListingPricingCreateWithoutListingInput,
+    deliveryDaysMax: number,
   ): Prisma.ListingCreateInput {
     return {
       seller: { connect: { id: sellerId } },
@@ -782,11 +887,11 @@ export class ListingsService {
       vehicleLocation: dto.vehicleLocation,
       city: dto.city,
       country: dto.country,
-      deliveryEstimateDays: dto.deliveryEstimateDays,
+      deliveryEstimateDays: dto.deliveryEstimateDays ?? deliveryDaysMax,
       description: dto.description,
       videoUrl: dto.videoUrl,
       listingPricing: {
-        create: this.buildPricingData(dto.pricing),
+        create: pricingCreate,
       },
       evSpecs: dto.evSpecs ? { create: { ...dto.evSpecs } } : undefined,
       useCaseTags: dto.useCases?.length
@@ -839,20 +944,6 @@ export class ListingsService {
     return data;
   }
 
-  private buildPricingData(
-    pricing: CreateListingDto['pricing'],
-  ): Prisma.ListingPricingCreateWithoutListingInput {
-    return {
-      basePriceUsd: pricing.basePriceUsd,
-      fobPriceUsd: pricing.fobPriceUsd,
-      sellerDesiredPayoutUsd: pricing.sellerDesiredPayoutUsd,
-      discountUsd: pricing.discountUsd,
-      finalPriceUsd: pricing.finalPriceUsd,
-      finalPriceRwf: pricing.finalPriceRwf,
-      currency: pricing.currency ?? 'USD',
-    };
-  }
-
   private async validateCategoryRefs(
     categoryId: string,
     subcategoryId?: string,
@@ -876,7 +967,7 @@ export class ListingsService {
     }
   }
 
-  private async getSellerForUser(userId: string) {
+  private async resolveSellerForUser(userId: string) {
     const seller = await this.prisma.seller.findUnique({ where: { userId } });
 
     if (!seller) {
@@ -887,7 +978,7 @@ export class ListingsService {
   }
 
   private async getOwnedListing(userId: string, listingId: string) {
-    const seller = await this.getSellerForUser(userId);
+    const seller = await this.resolveSellerForUser(userId);
     const listing = await this.prisma.listing.findFirst({
       where: { id: listingId, sellerId: seller.id, deletedAt: null },
     });

@@ -21,6 +21,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { FleetModule } from './modules/fleet/fleet.module';
 import { PartsModule } from './modules/parts/parts.module';
 import { EnergyModule } from './modules/energy/energy.module';
+import { SellersModule } from './modules/sellers/sellers.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 
@@ -45,6 +46,7 @@ import { UsersModule } from './users/users.module';
     FleetModule,
     PartsModule,
     EnergyModule,
+    SellersModule,
   ],
   controllers: [AppController],
   providers: [

@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { slugifyText } from '../../common/utils/slug.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SellersService } from '../sellers/sellers.service';
 import { CreatePartDto } from './dto/create-part.dto';
 import { FilterPartsDto } from './dto/filter-parts.dto';
 import { UpdatePartDto } from './dto/update-part.dto';
@@ -13,7 +14,10 @@ import { toPublicPart } from './part.mapper';
 
 @Injectable()
 export class PartsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sellersService: SellersService,
+  ) {}
 
   async browse(filters: FilterPartsDto) {
     const where = this.buildWhere(filters, true);
@@ -37,7 +41,7 @@ export class PartsService {
   }
 
   async createForSeller(userId: string, dto: CreatePartDto) {
-    const seller = await this.getSellerForUser(userId);
+    const seller = await this.sellersService.assertSellerCanTrade(userId);
     const slug = await this.uniquePartSlug(dto.name);
 
     const part = await this.prisma.part.create({
@@ -72,6 +76,7 @@ export class PartsService {
   }
 
   async updateOwn(userId: string, partId: string, dto: UpdatePartDto) {
+    await this.sellersService.assertSellerCanTrade(userId);
     const part = await this.getOwnedPart(userId, partId);
 
     const updated = await this.prisma.part.update({
@@ -96,6 +101,7 @@ export class PartsService {
   }
 
   async deleteOwn(userId: string, partId: string) {
+    await this.sellersService.assertSellerCanTrade(userId);
     const part = await this.getOwnedPart(userId, partId);
 
     await this.prisma.part.update({
@@ -202,16 +208,11 @@ export class PartsService {
     return slug;
   }
 
-  private async getSellerForUser(userId: string) {
+  private async getOwnedPart(userId: string, partId: string) {
     const seller = await this.prisma.seller.findUnique({ where: { userId } });
     if (!seller) {
       throw new ForbiddenException('Seller profile is required');
     }
-    return seller;
-  }
-
-  private async getOwnedPart(userId: string, partId: string) {
-    const seller = await this.getSellerForUser(userId);
     const part = await this.prisma.part.findFirst({
       where: { id: partId, sellerId: seller.id },
       include: { photos: true },
