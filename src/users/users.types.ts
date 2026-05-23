@@ -1,8 +1,18 @@
 import type { Request } from 'express';
-import type { User } from '@prisma/client';
+import type { BuyerProfile, Seller, User } from '@prisma/client';
 
 export type SafeUser = Omit<User, 'passwordHash'> & {
   roles: string[];
+};
+
+/** Profile payload from GET /auth/me (permissions added in AuthService). */
+export type MeUserProfile = SafeUser & {
+  buyerProfile: BuyerProfile | null;
+  seller: Seller | null;
+};
+
+export type MeSession = MeUserProfile & {
+  permissions: string[];
 };
 
 export interface JwtUserPayload {

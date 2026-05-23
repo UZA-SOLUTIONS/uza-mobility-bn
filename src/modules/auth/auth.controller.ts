@@ -18,6 +18,7 @@ import { SkipAudit } from '../../common/audit/decorators/skip-audit.decorator';
 import { getRequestAuditContext } from '../../common/audit/request-context.util';
 import { Public } from './decorators/public.decorator';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { MeResponseDto } from './dto/me-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { AuthService } from './auth.service';
@@ -84,9 +85,13 @@ export class AuthController {
 
   @Get('me')
   @ApiBearerAuth('JWT-access')
-  @ApiOperation({ summary: 'Get the authenticated user profile' })
-  @ApiOkResponse({ description: 'Authenticated user profile' })
-  async me(@Req() request: AuthenticatedRequest) {
+  @ApiOperation({
+    summary: 'Get current session profile',
+    description:
+      'Returns user fields, roles, effective permissions (from DB), buyerProfile, and seller.',
+  })
+  @ApiOkResponse({ type: MeResponseDto })
+  async me(@Req() request: AuthenticatedRequest): Promise<MeResponseDto> {
     if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }

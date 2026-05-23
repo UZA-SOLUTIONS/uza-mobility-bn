@@ -11,7 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
 import { CreateSellerProfileDto } from './dto/create-seller-profile.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { SafeUser } from './users.types';
+import { MeUserProfile, SafeUser } from './users.types';
 
 type UserWithRelations = Prisma.UserGetPayload<{
   include: { roles: { include: { role: true } } };
@@ -156,7 +156,7 @@ export class UsersService {
     return profile;
   }
 
-  async getMeProfile(userId: string) {
+  async getMeProfile(userId: string): Promise<MeUserProfile> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {

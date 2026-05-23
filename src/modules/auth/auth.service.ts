@@ -8,6 +8,7 @@ import type { RequestAuditContext } from '../../common/audit/request-context.uti
 import { UsersService } from '../../users/users.service';
 import { SafeUser } from '../../users/users.types';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import type { MeResponseDto } from './dto/me-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RbacService } from './rbac.service';
@@ -173,8 +174,16 @@ export class AuthService {
     }
   }
 
-  async me(userId: string) {
-    return this.usersService.getMeProfile(userId);
+  async me(userId: string): Promise<MeResponseDto> {
+    const profile = await this.usersService.getMeProfile(userId);
+    const permissions = await this.rbacService.resolvePermissionsForRoleNames(
+      profile.roles,
+    );
+
+    return {
+      ...profile,
+      permissions,
+    };
   }
 
   private async issueTokens(user: SafeUser): Promise<AuthResponseDto> {
