@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { slugifyText } from '../../common/utils/slug.util';
+import { resolveUniqueSlug } from '../../common/utils/slug.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SellersService } from '../sellers/sellers.service';
 import { CreatePartDto } from './dto/create-part.dto';
@@ -42,7 +42,11 @@ export class PartsService {
 
   async createForSeller(userId: string, dto: CreatePartDto) {
     const seller = await this.sellersService.assertSellerCanTrade(userId);
-    const slug = await this.uniquePartSlug(dto.name);
+    const slug = await resolveUniqueSlug(dto.name, (candidate) =>
+      this.prisma.part
+        .findUnique({ where: { slug: candidate } })
+        .then((row) => row !== null),
+    );
 
     const part = await this.prisma.part.create({
       data: {
@@ -193,19 +197,6 @@ export class PartsService {
         totalPages: Math.ceil(total / limit) || 1,
       },
     };
-  }
-
-  private async uniquePartSlug(name: string): Promise<string> {
-    const base = slugifyText(name);
-    let slug = base;
-    let attempt = 0;
-
-    while (await this.prisma.part.findUnique({ where: { slug } })) {
-      attempt += 1;
-      slug = `${base}-${attempt}`;
-    }
-
-    return slug;
   }
 
   private async getOwnedPart(userId: string, partId: string) {

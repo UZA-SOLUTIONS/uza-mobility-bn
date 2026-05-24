@@ -12,7 +12,7 @@ import {
 } from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
-import { generateListingSlug } from '../../common/utils/slug.util';
+import { resolveUniqueSlug } from '../../common/utils/slug.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AddListingPhotosDto } from './dto/add-listing-photos.dto';
 import { AdminFilterListingsDto } from './dto/admin-filter-listings.dto';
@@ -213,7 +213,7 @@ export class ListingsService {
     const seller = await this.sellersService.assertSellerCanTrade(userId);
     await this.validateCategoryRefs(dto.categoryId, dto.subcategoryId);
 
-    const slug = generateListingSlug(
+    const slug = await this.uniqueListingSlug(
       dto.brand,
       dto.model,
       dto.manufacturingYear,
@@ -271,7 +271,7 @@ export class ListingsService {
     await this.validateCategoryRefs(dto.categoryId, dto.subcategoryId);
 
     const initialStatus = dto.initialStatus ?? ListingStatus.PUBLISHED;
-    const slug = generateListingSlug(
+    const slug = await this.uniqueListingSlug(
       dto.brand,
       dto.model,
       dto.manufacturingYear,
@@ -1044,6 +1044,14 @@ export class ListingsService {
     }
 
     return listing;
+  }
+
+  private uniqueListingSlug(brand: string, model: string, year: number) {
+    return resolveUniqueSlug(`${brand}-${model}-${year}`, (candidate) =>
+      this.prisma.listing
+        .findUnique({ where: { slug: candidate } })
+        .then((row) => row !== null),
+    );
   }
 
   private assertTransition(from: ListingStatus, to: ListingStatus) {

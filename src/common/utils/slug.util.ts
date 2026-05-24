@@ -1,5 +1,3 @@
-import { randomBytes } from 'crypto';
-
 export function slugifyText(value: string): string {
   return value
     .toLowerCase()
@@ -10,18 +8,27 @@ export function slugifyText(value: string): string {
     .replace(/^-|-$/g, '');
 }
 
-export function generateListingSlug(
-  brand: string,
-  model: string,
-  year: number,
-): string {
-  const base = slugifyText(`${brand}-${model}-${year}`);
-  const suffix = randomBytes(4).toString('hex');
-  return `${base}-${suffix}`;
-}
+/**
+ * Slug derived only from `text` (lowercase, hyphenated).
+ * On collision, appends -1, -2, … — never random tokens.
+ */
+export async function resolveUniqueSlug(
+  text: string,
+  isTaken: (slug: string) => Promise<boolean>,
+): Promise<string> {
+  const base = slugifyText(text);
 
-export function generateSubcategorySlug(name: string): string {
-  const base = slugifyText(name);
-  const suffix = randomBytes(2).toString('hex');
-  return `${base}-${suffix}`;
+  if (!base) {
+    throw new Error('Cannot generate slug from empty text');
+  }
+
+  let slug = base;
+  let attempt = 0;
+
+  while (await isTaken(slug)) {
+    attempt += 1;
+    slug = `${base}-${attempt}`;
+  }
+
+  return slug;
 }

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { NotificationType, Prisma } from '@prisma/client';
-import { slugifyText } from '../../common/utils/slug.util';
+import { resolveUniqueSlug } from '../../common/utils/slug.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateChargingProductDto } from './dto/create-charging-product.dto';
@@ -42,7 +42,11 @@ export class EnergyService {
   }
 
   async createProduct(dto: CreateChargingProductDto) {
-    const slug = await this.uniqueProductSlug(dto.name);
+    const slug = await resolveUniqueSlug(dto.name, (candidate) =>
+      this.prisma.chargingProduct
+        .findUnique({ where: { slug: candidate } })
+        .then((row) => row !== null),
+    );
 
     return this.prisma.chargingProduct.create({
       data: {
@@ -174,19 +178,6 @@ export class EnergyService {
       where: { id },
       data: { status: dto.status },
     });
-  }
-
-  private async uniqueProductSlug(name: string): Promise<string> {
-    const base = slugifyText(name);
-    let slug = base;
-    let attempt = 0;
-
-    while (await this.prisma.chargingProduct.findUnique({ where: { slug } })) {
-      attempt += 1;
-      slug = `${base}-${attempt}`;
-    }
-
-    return slug;
   }
 
   private async getProductOrThrow(id: string) {

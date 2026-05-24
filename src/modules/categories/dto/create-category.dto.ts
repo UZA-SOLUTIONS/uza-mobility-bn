@@ -16,11 +16,6 @@ export class CreateCategoryDto {
   @Length(1, 150)
   name!: string;
 
-  @ApiProperty({ example: 'passenger-ev' })
-  @IsString()
-  @Length(1, 100)
-  slug!: string;
-
   @ApiProperty({ enum: CategoryType })
   @IsEnum(CategoryType)
   type!: CategoryType;

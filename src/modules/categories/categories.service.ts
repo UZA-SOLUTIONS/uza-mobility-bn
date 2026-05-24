@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { generateSubcategorySlug } from '../../common/utils/slug.util';
+import { resolveUniqueSlug } from '../../common/utils/slug.util';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateSubcategoryDto } from './dto/create-subcategory.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -45,11 +45,17 @@ export class CategoriesService {
   }
 
   async create(dto: CreateCategoryDto) {
+    const slug = await resolveUniqueSlug(dto.name, (candidate) =>
+      this.prisma.category
+        .findUnique({ where: { slug: candidate } })
+        .then((row) => row !== null),
+    );
+
     try {
       return await this.prisma.category.create({
         data: {
           name: dto.name,
-          slug: dto.slug,
+          slug,
           type: dto.type,
           description: dto.description,
           iconUrl: dto.iconUrl,
@@ -57,7 +63,7 @@ export class CategoriesService {
         },
       });
     } catch {
-      throw new ConflictException('Category name or slug already exists');
+      throw new ConflictException('Category name already exists');
     }
   }
 
@@ -82,7 +88,11 @@ export class CategoriesService {
   async addSubcategory(categoryId: string, dto: CreateSubcategoryDto) {
     await this.ensureExists(categoryId);
 
-    const slug = generateSubcategorySlug(dto.name);
+    const slug = await resolveUniqueSlug(dto.name, (candidate) =>
+      this.prisma.subcategory
+        .findUnique({ where: { slug: candidate } })
+        .then((row) => row !== null),
+    );
 
     try {
       return await this.prisma.subcategory.create({
