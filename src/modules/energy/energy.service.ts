@@ -7,9 +7,11 @@ import { NotificationType, Prisma } from '@prisma/client';
 import { resolveUniqueSlug } from '../../common/utils/slug.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateChargingProductDto } from './dto/create-charging-product.dto';
+import type {
+  CreateChargingProductPayload,
+  UpdateChargingProductPayload,
+} from './dto/energy-write.types';
 import { CreateEnergyRequestDto } from './dto/create-energy-request.dto';
-import { UpdateChargingProductDto } from './dto/update-charging-product.dto';
 import { UpdateEnergyRequestStatusDto } from './dto/update-energy-request-status.dto';
 import { ENERGY_REQUEST_STATUSES } from './energy.constants';
 
@@ -41,7 +43,7 @@ export class EnergyService {
     return product;
   }
 
-  async createProduct(dto: CreateChargingProductDto) {
+  async createProduct(dto: CreateChargingProductPayload) {
     const slug = await resolveUniqueSlug(dto.name, (candidate) =>
       this.prisma.chargingProduct
         .findUnique({ where: { slug: candidate } })
@@ -74,10 +76,10 @@ export class EnergyService {
     });
   }
 
-  async updateProduct(id: string, dto: UpdateChargingProductDto) {
-    await this.getProductOrThrow(id);
+  async updateProduct(id: string, dto: UpdateChargingProductPayload) {
+    const existing = await this.getProductOrThrow(id);
 
-    return this.prisma.chargingProduct.update({
+    const updated = await this.prisma.chargingProduct.update({
       where: { id },
       data: {
         name: dto.name,
@@ -92,6 +94,19 @@ export class EnergyService {
       },
       include: { photos: true },
     });
+
+    if (dto.photoUrls?.length) {
+      await this.prisma.chargingProductPhoto.createMany({
+        data: dto.photoUrls.map((url, index) => ({
+          productId: existing.id,
+          url,
+          isPrimary: updated.photos.length === 0 && index === 0,
+        })),
+      });
+      return this.findProductById(id);
+    }
+
+    return updated;
   }
 
   async submitRequest(dto: CreateEnergyRequestDto) {

@@ -14,19 +14,20 @@ import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { resolveUniqueSlug } from '../../common/utils/slug.util';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AddListingPhotosDto } from './dto/add-listing-photos.dto';
+import type { ListingPhotoInput } from './dto/listing-photo-input';
 import { AdminFilterListingsDto } from './dto/admin-filter-listings.dto';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { FilterListingsDto } from './dto/filter-listings.dto';
 import { RejectListingDto } from './dto/reject-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
-import { AdminCreateListingDto } from './dto/admin-create-listing.dto';
+import type { AdminCreateListingPayload } from './dto/listing-write.types';
 import { canTransition } from './listing-transitions';
 import {
   toAdminListing,
   toPublicListing,
   toSellerListing,
 } from './listing.mapper';
+import { marketplaceSellerFilter } from '../sellers/seller-profile.util';
 import {
   ADMIN_ONLY_SELLER_TYPES,
   PUBLIC_MARKETPLACE_STATUSES,
@@ -37,6 +38,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import type { NotificationMetadata } from '../notifications/notifications.types';
 import { PricingService } from '../pricing/pricing.service';
 import { SellersService } from '../sellers/sellers.service';
+import { UsersService } from '../../users/users.service';
 import {
   assertListingPricingInput,
   breakdownToListingPricingCreate,
@@ -62,6 +64,7 @@ export class ListingsService {
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
     private readonly sellersService: SellersService,
+    private readonly usersService: UsersService,
     private readonly pricingService: PricingService,
     private readonly promotionsService: PromotionsService,
   ) {}
@@ -255,18 +258,16 @@ export class ListingsService {
 
   async createByAdmin(
     adminUserId: string,
-    dto: AdminCreateListingDto,
+    dto: AdminCreateListingPayload,
     auditContext: RequestAuditContext = {},
   ) {
     this.assertAdminOnlyListingType(dto.sellerType);
 
-    const seller = await this.prisma.seller.findUnique({
-      where: { id: dto.sellerId },
-    });
-
-    if (!seller) {
-      throw new NotFoundException('Seller not found');
-    }
+    const seller = await this.resolveAdminSellerProfile(
+      adminUserId,
+      dto.sellerType,
+      auditContext,
+    );
 
     await this.validateCategoryRefs(dto.categoryId, dto.subcategoryId);
 
@@ -294,8 +295,18 @@ export class ListingsService {
           deliveryDaysMax,
         ),
         status: initialStatus,
+        createdBy: { connect: { id: adminUserId } },
         publishedAt:
           initialStatus === ListingStatus.PUBLISHED ? new Date() : undefined,
+        photos: dto.photoUrls?.length
+          ? {
+              create: dto.photoUrls.map((url, index) => ({
+                url,
+                isPrimary: index === 0,
+                displayOrder: index,
+              })),
+            }
+          : undefined,
       },
       include: adminListingInclude,
     });
@@ -524,7 +535,7 @@ export class ListingsService {
   async addPhotos(
     userId: string,
     listingId: string,
-    dto: AddListingPhotosDto,
+    photoInputs: ListingPhotoInput[],
     auditContext: RequestAuditContext = {},
   ) {
     await this.sellersService.assertSellerCanTrade(userId);
@@ -543,7 +554,7 @@ export class ListingsService {
       where: { listingId },
     });
 
-    if (existingCount + dto.photos.length > 20) {
+    if (existingCount + photoInputs.length > 20) {
       throw new BadRequestException('Maximum 20 photos per listing');
     }
 
@@ -552,7 +563,7 @@ export class ListingsService {
     });
 
     await this.prisma.listingPhoto.createMany({
-      data: dto.photos.map((photo, index) => ({
+      data: photoInputs.map((photo, index) => ({
         listingId,
         url: photo.url,
         altText: photo.altText,
@@ -561,7 +572,7 @@ export class ListingsService {
       })),
     });
 
-    const photos = await this.prisma.listingPhoto.findMany({
+    const savedPhotos = await this.prisma.listingPhoto.findMany({
       where: { listingId },
       orderBy: { displayOrder: 'asc' },
     });
@@ -575,11 +586,11 @@ export class ListingsService {
       metadata: {
         email: auditContext.actorEmail,
         slug: listing.slug,
-        count: dto.photos.length,
+        count: photoInputs.length,
       },
     });
 
-    return photos;
+    return savedPhotos;
   }
 
   async adminFindAll(filters: AdminFilterListingsDto) {
@@ -595,6 +606,10 @@ export class ListingsService {
 
     if (filters.sellerId) {
       where.sellerId = filters.sellerId;
+    }
+
+    if (filters.sellerType) {
+      where.sellerType = filters.sellerType;
     }
 
     const [rows, total] = await Promise.all([
@@ -1012,7 +1027,9 @@ export class ListingsService {
   }
 
   private async resolveSellerForUser(userId: string) {
-    const seller = await this.prisma.seller.findUnique({ where: { userId } });
+    const seller = await this.prisma.seller.findFirst({
+      where: marketplaceSellerFilter(userId),
+    });
 
     if (!seller) {
       throw new ForbiddenException('Seller profile is required');
@@ -1068,6 +1085,72 @@ export class ListingsService {
         'UZA Rwanda stock and China sourcing listings must be created by an administrator',
       );
     }
+  }
+
+  /**
+   * Admin platform listings use the creating admin's Seller profile (same as
+   * seller-owned listings: listing.sellerId → Seller → User).
+   */
+  private async resolveAdminSellerProfile(
+    adminUserId: string,
+    sellerType: SellerType,
+    auditContext: RequestAuditContext = {},
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: adminUserId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    let seller = await this.prisma.seller.findUnique({
+      where: {
+        userId_sellerType: { userId: adminUserId, sellerType },
+      },
+    });
+
+    if (!seller) {
+      await this.usersService.ensureRoleAdded(adminUserId, 'SELLER');
+
+      seller = await this.prisma.seller.create({
+        data: {
+          userId: adminUserId,
+          sellerType,
+          status: 'ACTIVE',
+          businessName:
+            `${user.firstName} ${user.lastName}`.trim() || user.email,
+          email: user.email,
+          country: 'RW',
+          isVerified: true,
+          verifiedAt: new Date(),
+        },
+      });
+
+      await this.auditService.record({
+        userId: adminUserId,
+        action: 'sellers:platform-profile-provisioned',
+        entity: 'Seller',
+        ipAddress: auditContext.ipAddress,
+        userAgent: auditContext.userAgent,
+        metadata: {
+          email: auditContext.actorEmail ?? user.email,
+          sellerType,
+          sellerId: seller.id,
+        },
+      });
+
+      return seller;
+    }
+
+    if (seller.status !== 'ACTIVE') {
+      seller = await this.prisma.seller.update({
+        where: { id: seller.id },
+        data: { status: 'ACTIVE', isVerified: true, verifiedAt: new Date() },
+      });
+    }
+
+    return seller;
   }
 
   private assertAdminOnlyListingType(sellerType: SellerType): void {

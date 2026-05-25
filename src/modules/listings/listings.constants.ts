@@ -48,4 +48,12 @@ export const adminListingInclude = {
     },
   },
   verificationReport: true,
+  createdBy: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+    },
+  },
 } satisfies Prisma.ListingInclude;

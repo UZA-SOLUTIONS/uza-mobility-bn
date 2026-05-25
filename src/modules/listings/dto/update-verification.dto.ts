@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { VerificationLevel } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, IsUrl } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class UpdateVerificationDto {
   @ApiProperty({ enum: VerificationLevel })
@@ -21,14 +21,4 @@ export class UpdateVerificationDto {
   @IsOptional()
   @IsString()
   documentStatus?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsUrl()
-  reportUrl?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsUrl()
-  batteryReportUrl?: string;
 }

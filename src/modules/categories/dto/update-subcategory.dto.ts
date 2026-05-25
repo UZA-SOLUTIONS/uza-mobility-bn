@@ -1,19 +1,22 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Length, Min } from 'class-validator';
 
-export class CreateSubcategoryDto {
-  @ApiProperty({ example: 'SUV' })
+export class UpdateSubcategoryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   @Length(1, 100)
-  name!: string;
+  name?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional()
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   displayOrder?: number;

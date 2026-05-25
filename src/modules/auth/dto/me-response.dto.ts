@@ -94,6 +94,9 @@ export class MeResponseDto {
   @ApiPropertyOptional({ type: MeSellerDto, nullable: true })
   seller!: MeSellerDto | null;
 
+  @ApiProperty({ type: [MeSellerDto] })
+  sellers!: MeSellerDto[];
+
   @ApiProperty()
   createdAt!: Date;
 

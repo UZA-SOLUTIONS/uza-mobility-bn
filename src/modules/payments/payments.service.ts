@@ -20,7 +20,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { FilterPaymentsDto } from './dto/filter-payments.dto';
 import { MarkPartialPaymentDto } from './dto/partial-payment.dto';
 import { RejectPaymentDto } from './dto/reject-payment.dto';
-import { SubmitPaymentDto } from './dto/submit-payment.dto';
+import type { SubmitPaymentPayload } from './dto/payment-write.types';
 import { canPaymentTransition } from './payment-transitions';
 
 const PAYABLE_INVOICE_STATUSES: InvoiceStatus[] = [
@@ -40,7 +40,7 @@ export class PaymentsService {
 
   async submitPayment(
     userId: string,
-    dto: SubmitPaymentDto,
+    dto: SubmitPaymentPayload,
     auditContext: RequestAuditContext = {},
   ) {
     const invoice = await this.prisma.invoice.findUnique({

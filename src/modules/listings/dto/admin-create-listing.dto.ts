@@ -10,10 +10,6 @@ const ADMIN_CREATE_STATUSES = [
 ] as const;
 
 export class AdminCreateListingDto extends CreateListingDto {
-  @ApiProperty({ description: 'Seller record id (UZA org seller in DB)' })
-  @IsString()
-  sellerId!: string;
-
   @ApiPropertyOptional({
     enum: ADMIN_CREATE_STATUSES,
     default: ListingStatus.PUBLISHED,

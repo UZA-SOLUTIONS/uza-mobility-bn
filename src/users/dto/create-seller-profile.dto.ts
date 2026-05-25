@@ -59,12 +59,6 @@ export class CreateSellerProfileDto {
   @Length(2, 2)
   country!: string;
 
-  @ApiPropertyOptional({ example: 'https://cdn.example.com/logo.png' })
-  @IsOptional()
-  @IsString()
-  @Length(3, 255)
-  logoUrl?: string;
-
   @ApiPropertyOptional({ example: 'Authorized dealer of EVs and accessories' })
   @IsOptional()
   @IsString()

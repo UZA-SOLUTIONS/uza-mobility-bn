@@ -70,7 +70,7 @@ model User {
 
   roles             UserRole[]
   buyerProfile      BuyerProfile?
-  seller            Seller?
+  sellers           Seller[]
   invoices          Invoice[]
   orders            Order[]
   financingRequests FinancingRequest[]
@@ -79,6 +79,7 @@ model User {
   refreshTokens     RefreshToken[]
   savedListings     SavedListing[]
   notifications     Notification[]
+  listingsCreated   Listing[]           @relation("ListingCreatedBy")
 
   @@map("users")
 }
@@ -161,7 +162,7 @@ enum SellerStatus {
 
 model Seller {
   id                 String             @id @default(cuid())
-  userId             String             @unique
+  userId             String
   sellerType         SellerType
   status             SellerStatus       @default(PENDING)
   businessName       String
@@ -185,6 +186,7 @@ model Seller {
   subscription       SellerSubscription?
   parts              Part[]
 
+  @@unique([userId, sellerType])
   @@map("sellers")
 }
 
@@ -347,6 +349,7 @@ enum VerificationLevel {
 model Listing {
   id                  String             @id @default(cuid())
   sellerId            String
+  createdByUserId     String?
   categoryId          String
   subcategoryId       String?
   listingTitle        String
@@ -390,6 +393,7 @@ model Listing {
   deletedAt           DateTime?
 
   seller              Seller             @relation(fields: [sellerId], references: [id])
+  createdBy           User?              @relation("ListingCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   category            Category           @relation(fields: [categoryId], references: [id])
   subcategory         Subcategory?       @relation(fields: [subcategoryId], references: [id])
   evSpecs             EvSpec?

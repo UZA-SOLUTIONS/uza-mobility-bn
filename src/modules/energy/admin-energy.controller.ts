@@ -6,15 +6,29 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { imageMulterOptions } from '../../common/uploads/multer.config';
+import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
+import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
+import { UploadFolder } from '../../common/uploads/upload.constants';
 import { CreateChargingProductDto } from './dto/create-charging-product.dto';
 import { UpdateChargingProductDto } from './dto/update-charging-product.dto';
 import { UpdateEnergyRequestStatusDto } from './dto/update-energy-request-status.dto';
@@ -43,27 +57,65 @@ class FilterEnergyRequestsDto {
 @ApiBearerAuth('JWT-access')
 @Controller('admin/energy')
 export class AdminEnergyController {
-  constructor(private readonly energyService: EnergyService) {}
+  constructor(
+    private readonly energyService: EnergyService,
+    private readonly cloudinary: CloudinaryService,
+  ) {}
 
   @Post('products')
   @UseGuards(RolesGuard, PermissionsGuard)
   @Roles('MARKETPLACE_ADMIN', 'SUPER_ADMIN')
   @RequirePermission('parts:manage')
+  @UseInterceptors(FilesInterceptor('photos', 10, imageMulterOptions))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: multipartPayloadSchema({
+      photos: { type: 'array', items: { type: 'string', format: 'binary' } },
+    }),
+  })
   @ApiOperation({ summary: 'Create charging product' })
-  createProduct(@Body() dto: CreateChargingProductDto) {
-    return this.energyService.createProduct(dto);
+  async createProduct(
+    @Body('payload') payload: string,
+    @UploadedFiles() photos?: Express.Multer.File[],
+  ) {
+    const dto = await parseMultipartPayload(CreateChargingProductDto, payload);
+    const photoUrls = photos?.length
+      ? this.cloudinary.urlsFromAssets(
+          await this.cloudinary.uploadImages(photos, UploadFolder.ENERGY),
+        )
+      : undefined;
+    return this.energyService.createProduct({ ...dto, photoUrls });
   }
 
   @Patch('products/:id')
   @UseGuards(RolesGuard, PermissionsGuard)
   @Roles('MARKETPLACE_ADMIN', 'SUPER_ADMIN')
   @RequirePermission('parts:manage')
+  @UseInterceptors(FilesInterceptor('photos', 10, imageMulterOptions))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: multipartPayloadSchema(
+      {
+        photos: { type: 'array', items: { type: 'string', format: 'binary' } },
+      },
+      [],
+    ),
+  })
   @ApiOperation({ summary: 'Update charging product' })
-  updateProduct(
+  async updateProduct(
     @Param('id') id: string,
-    @Body() dto: UpdateChargingProductDto,
+    @Body('payload') payload: string | undefined,
+    @UploadedFiles() photos?: Express.Multer.File[],
   ) {
-    return this.energyService.updateProduct(id, dto);
+    const dto = payload?.trim()
+      ? await parseMultipartPayload(UpdateChargingProductDto, payload)
+      : {};
+    const photoUrls = photos?.length
+      ? this.cloudinary.urlsFromAssets(
+          await this.cloudinary.uploadImages(photos, UploadFolder.ENERGY),
+        )
+      : undefined;
+    return this.energyService.updateProduct(id, { ...dto, photoUrls });
   }
 
   @Get('requests')

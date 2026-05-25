@@ -8,6 +8,9 @@ export type SafeUser = Omit<User, 'passwordHash'> & {
 /** Profile payload from GET /auth/me (permissions added in AuthService). */
 export type MeUserProfile = SafeUser & {
   buyerProfile: BuyerProfile | null;
+  /** All seller profiles (one per inventory channel). */
+  sellers: Seller[];
+  /** Primary profile for account UI (marketplace seller if any, else first). */
   seller: Seller | null;
 };
 

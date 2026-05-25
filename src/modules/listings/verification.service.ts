@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
-import { UpdateVerificationDto } from './dto/update-verification.dto';
+import type { UpdateVerificationPayload } from './dto/verification-write.types';
 import { adminListingInclude } from './listings.constants';
 import { toAdminListing } from './listing.mapper';
 
@@ -15,7 +15,7 @@ export class VerificationService {
 
   async updateVerification(
     listingId: string,
-    dto: UpdateVerificationDto,
+    dto: UpdateVerificationPayload,
     adminUserId: string,
     auditContext: RequestAuditContext = {},
   ) {

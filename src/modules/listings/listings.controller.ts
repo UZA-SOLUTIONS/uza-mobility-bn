@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,9 +10,18 @@ import {
   Query,
   Req,
   UnauthorizedException,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { Public } from '../auth/decorators/public.decorator';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RequirePermission } from '../auth/decorators/permissions.decorator';
@@ -20,7 +30,9 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { SkipAudit } from '../../common/audit/decorators/skip-audit.decorator';
 import { getRequestAuditContext } from '../../common/audit/request-context.util';
 import type { AuthenticatedRequest } from '../../users/users.types';
-import { AddListingPhotosDto } from './dto/add-listing-photos.dto';
+import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { imageMulterOptions } from '../../common/uploads/multer.config';
+import { UploadFolder } from '../../common/uploads/upload.constants';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { FilterListingsDto } from './dto/filter-listings.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
@@ -29,7 +41,10 @@ import { ListingsService } from './listings.service';
 @ApiTags('listings')
 @Controller('listings')
 export class ListingsController {
-  constructor(private readonly listingsService: ListingsService) {}
+  constructor(
+    private readonly listingsService: ListingsService,
+    private readonly cloudinary: CloudinaryService,
+  ) {}
 
   @Get('featured')
   @Public()
@@ -181,20 +196,46 @@ export class ListingsController {
   @ApiBearerAuth('JWT-access')
   @UseGuards(PermissionsGuard)
   @RequirePermission('listings:create')
-  @ApiOperation({ summary: 'Add photo URLs to listing (max 20)' })
-  addPhotos(
+  @UseInterceptors(FilesInterceptor('photos', 20, imageMulterOptions))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        photos: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+        },
+      },
+      required: ['photos'],
+    },
+  })
+  @ApiOperation({ summary: 'Upload listing photos (max 20 total per listing)' })
+  async addPhotos(
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,
-    @Body() dto: AddListingPhotosDto,
+    @UploadedFiles() files: Express.Multer.File[],
   ) {
     if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
+    if (!files?.length) {
+      throw new BadRequestException('At least one photo file is required');
+    }
+
+    const assets = await this.cloudinary.uploadImages(
+      files,
+      UploadFolder.LISTINGS,
+    );
+    const photos = assets.map((asset, index) => ({
+      url: asset.url,
+      isPrimary: index === 0,
+    }));
 
     return this.listingsService.addPhotos(
       request.user.sub,
       id,
-      dto,
+      photos,
       getRequestAuditContext(request),
     );
   }

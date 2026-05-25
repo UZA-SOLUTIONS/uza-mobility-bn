@@ -4,9 +4,11 @@ import {
   Get,
   Patch,
   Post,
+  Query,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import { SellerType } from '@prisma/client';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -18,7 +20,6 @@ import { SkipAudit } from '../common/audit/decorators/skip-audit.decorator';
 import { getRequestAuditContext } from '../common/audit/request-context.util';
 import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
 import { CreateSellerProfileDto } from './dto/create-seller-profile.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 import type { AuthenticatedRequest } from './users.types';
 
@@ -81,12 +82,26 @@ export class UsersController {
   @Get('seller-profile')
   @ApiOperation({ summary: 'Get own seller profile' })
   @ApiOkResponse({ description: 'Seller profile' })
-  getSellerProfile(@Req() request: AuthenticatedRequest) {
+  getSellerProfile(
+    @Req() request: AuthenticatedRequest,
+    @Query('sellerType') sellerType?: SellerType,
+  ) {
     if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
 
-    return this.usersService.getSellerProfile(request.user.sub);
+    return this.usersService.getSellerProfile(request.user.sub, sellerType);
+  }
+
+  @Get('seller-profiles')
+  @ApiOperation({ summary: 'List all seller profiles for current user' })
+  @ApiOkResponse({ description: 'Seller profiles' })
+  listSellerProfiles(@Req() request: AuthenticatedRequest) {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    return this.usersService.listSellerProfiles(request.user.sub);
   }
 
   @Post('seller-profile')
@@ -110,11 +125,16 @@ export class UsersController {
 
   @Patch('seller-profile')
   @SkipAudit()
-  @ApiOperation({ summary: 'Update seller profile' })
+  @ApiOperation({
+    summary: 'Update seller profile',
+    description:
+      'Text fields only. User profile photo is updated via PATCH /auth/me.',
+  })
   @ApiOkResponse({ description: 'Updated seller profile' })
   updateSellerProfile(
     @Req() request: AuthenticatedRequest,
     @Body() dto: UpdateSellerProfileDto,
+    @Query('sellerType') sellerType?: SellerType,
   ) {
     if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
@@ -122,7 +142,10 @@ export class UsersController {
 
     return this.usersService.updateSellerProfile(
       request.user.sub,
-      dto,
+      {
+        ...dto,
+        ...(sellerType ? { sellerType } : {}),
+      },
       getRequestAuditContext(request),
     );
   }

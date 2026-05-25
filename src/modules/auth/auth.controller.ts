@@ -7,15 +7,25 @@ import {
   Post,
   Req,
   UnauthorizedException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { SkipAudit } from '../../common/audit/decorators/skip-audit.decorator';
 import { getRequestAuditContext } from '../../common/audit/request-context.util';
+import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { imageMulterOptions } from '../../common/uploads/multer.config';
+import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
+import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
+import { UploadFolder } from '../../common/uploads/upload.constants';
 import { Public } from './decorators/public.decorator';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { MeResponseDto } from './dto/me-response.dto';
@@ -34,6 +44,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   @Post('register')
@@ -102,20 +113,48 @@ export class AuthController {
   @Patch('me')
   @SkipAudit()
   @ApiBearerAuth('JWT-access')
+  @UseInterceptors(FileInterceptor('photo', imageMulterOptions))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: multipartPayloadSchema(
+      {
+        photo: {
+          type: 'string',
+          format: 'binary',
+          description: 'Profile photo',
+        },
+      },
+      [],
+    ),
+  })
   @ApiOperation({ summary: 'Update the authenticated user profile' })
-  @ApiOkResponse({ description: 'Updated user profile' })
+  @ApiOkResponse({ type: MeResponseDto })
   async updateMe(
     @Req() request: AuthenticatedRequest,
-    @Body() dto: UpdateUserDto,
-  ) {
+    @Body('payload') payload: string | undefined,
+    @UploadedFile() photo?: Express.Multer.File,
+  ): Promise<MeResponseDto> {
     if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }
 
-    return this.usersService.updateMe(
+    const dto = payload?.trim()
+      ? await parseMultipartPayload(UpdateUserDto, payload)
+      : {};
+
+    const profilePhoto = photo
+      ? (await this.cloudinary.uploadImage(photo, UploadFolder.PROFILES)).url
+      : undefined;
+
+    await this.usersService.updateMe(
       request.user.sub,
-      dto,
+      {
+        ...dto,
+        ...(profilePhoto ? { profilePhoto } : {}),
+      },
       getRequestAuditContext(request),
     );
+
+    return this.authService.me(request.user.sub);
   }
 }

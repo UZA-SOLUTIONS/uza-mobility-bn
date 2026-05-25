@@ -10,8 +10,14 @@ import type { RequestAuditContext } from '../common/audit/request-context.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
 import { CreateSellerProfileDto } from './dto/create-seller-profile.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import type { UpdateSellerProfilePayload } from './dto/user-write.types';
+import type { UpdateUserPayload } from './dto/user-write.types';
+import {
+  pickPrimaryMeSeller,
+  sellerChannelKey,
+} from '../modules/sellers/seller-profile.util';
 import { MeUserProfile, SafeUser } from './users.types';
+import type { SellerType } from '@prisma/client';
 
 type UserWithRelations = Prisma.UserGetPayload<{
   include: { roles: { include: { role: true } } };
@@ -82,12 +88,20 @@ export class UsersService {
 
   async updateMe(
     userId: string,
-    dto: UpdateUserDto,
+    dto: UpdateUserPayload,
     auditContext: RequestAuditContext = {},
   ): Promise<SafeUser> {
     const updated = await this.prisma.user.update({
       where: { id: userId },
-      data: dto,
+      data: {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        phone: dto.phone,
+        preferredLanguage: dto.preferredLanguage,
+        ...(dto.profilePhoto !== undefined
+          ? { profilePhoto: dto.profilePhoto }
+          : {}),
+      },
       include: {
         roles: {
           include: {
@@ -166,7 +180,7 @@ export class UsersService {
           },
         },
         buyerProfile: true,
-        seller: true,
+        sellers: true,
       },
     });
 
@@ -174,12 +188,13 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    const { buyerProfile, seller, ...userRecord } = user;
+    const { buyerProfile, sellers, ...userRecord } = user;
 
     return {
       ...this.toSafeUser(userRecord),
       buyerProfile,
-      seller,
+      sellers,
+      seller: pickPrimaryMeSeller(sellers),
     };
   }
 
@@ -189,11 +204,13 @@ export class UsersService {
     auditContext: RequestAuditContext = {},
   ) {
     const existing = await this.prisma.seller.findUnique({
-      where: { userId },
+      where: sellerChannelKey(userId, dto.sellerType),
     });
 
     if (existing) {
-      throw new ConflictException('Seller profile already exists');
+      throw new ConflictException(
+        `Seller profile already exists for ${dto.sellerType.replace(/_/g, ' ')}`,
+      );
     }
 
     await this.ensureRoleAdded(userId, 'SELLER');
@@ -211,7 +228,6 @@ export class UsersService {
         address: dto.address,
         city: dto.city,
         country: dto.country,
-        logoUrl: dto.logoUrl,
         description: dto.description,
       },
     });
@@ -244,16 +260,32 @@ export class UsersService {
     return profile;
   }
 
-  async getSellerProfile(userId: string) {
-    const profile = await this.prisma.seller.findUnique({
-      where: { userId },
-    });
+  async getSellerProfile(userId: string, sellerType?: SellerType) {
+    if (sellerType) {
+      const profile = await this.prisma.seller.findUnique({
+        where: sellerChannelKey(userId, sellerType),
+      });
+      if (!profile) {
+        throw new NotFoundException('Seller profile not found');
+      }
+      return profile;
+    }
+
+    const sellers = await this.prisma.seller.findMany({ where: { userId } });
+    const profile = pickPrimaryMeSeller(sellers);
 
     if (!profile) {
       throw new NotFoundException('Seller profile not found');
     }
 
     return profile;
+  }
+
+  async listSellerProfiles(userId: string) {
+    return this.prisma.seller.findMany({
+      where: { userId },
+      orderBy: { sellerType: 'asc' },
+    });
   }
 
   async updateBuyerProfile(
@@ -300,32 +332,40 @@ export class UsersService {
 
   async updateSellerProfile(
     userId: string,
-    dto: Partial<CreateSellerProfileDto>,
+    dto: UpdateSellerProfilePayload,
     auditContext: RequestAuditContext = {},
   ) {
-    const existing = await this.prisma.seller.findUnique({
-      where: { userId },
-    });
+    const channelType = dto.sellerType;
+    let existing;
+
+    if (channelType) {
+      existing = await this.prisma.seller.findUnique({
+        where: sellerChannelKey(userId, channelType),
+      });
+    } else {
+      const sellers = await this.prisma.seller.findMany({ where: { userId } });
+      existing = pickPrimaryMeSeller(sellers);
+    }
 
     if (!existing) {
       throw new NotFoundException('Seller profile not found');
     }
 
+    const { sellerType: _channel, ...profileFields } = dto;
+
     const seller = await this.prisma.seller.update({
-      where: { userId },
+      where: { id: existing.id },
       data: {
-        sellerType: dto.sellerType,
-        businessName: dto.businessName,
-        businessRegNumber: dto.businessRegNumber,
-        taxId: dto.taxId,
-        contactPerson: dto.contactPerson,
-        phone: dto.phone,
-        email: dto.email,
-        address: dto.address,
-        city: dto.city,
-        country: dto.country,
-        logoUrl: dto.logoUrl,
-        description: dto.description,
+        businessName: profileFields.businessName,
+        businessRegNumber: profileFields.businessRegNumber,
+        taxId: profileFields.taxId,
+        contactPerson: profileFields.contactPerson,
+        phone: profileFields.phone,
+        email: profileFields.email,
+        address: profileFields.address,
+        city: profileFields.city,
+        country: profileFields.country,
+        description: profileFields.description,
       },
     });
 

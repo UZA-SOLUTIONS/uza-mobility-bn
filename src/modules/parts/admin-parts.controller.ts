@@ -1,17 +1,36 @@
 import {
+  Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
+  Post,
   Query,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { imageMulterOptions } from '../../common/uploads/multer.config';
+import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
+import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
+import { UploadFolder } from '../../common/uploads/upload.constants';
+import { AdminCreatePartDto } from './dto/admin-create-part.dto';
 import { FilterPartsDto } from './dto/filter-parts.dto';
+import { AdminUpdatePartDto } from './dto/admin-update-part.dto';
 import { PartsService } from './parts.service';
 
 @ApiTags('admin')
@@ -20,7 +39,10 @@ import { PartsService } from './parts.service';
 @UseGuards(RolesGuard)
 @Roles('MARKETPLACE_ADMIN', 'SUPER_ADMIN')
 export class AdminPartsController {
-  constructor(private readonly partsService: PartsService) {}
+  constructor(
+    private readonly partsService: PartsService,
+    private readonly cloudinary: CloudinaryService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionsGuard)
@@ -28,6 +50,82 @@ export class AdminPartsController {
   @ApiOperation({ summary: 'List all parts' })
   findAll(@Query() filters: FilterPartsDto) {
     return this.partsService.adminFindAll(filters);
+  }
+
+  @Get(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('parts:manage')
+  @ApiOperation({ summary: 'Part detail (admin)' })
+  findOne(@Param('id') id: string) {
+    return this.partsService.adminFindById(id);
+  }
+
+  @Post()
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('parts:manage')
+  @UseInterceptors(FilesInterceptor('photos', 10, imageMulterOptions))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: multipartPayloadSchema({
+      photos: { type: 'array', items: { type: 'string', format: 'binary' } },
+    }),
+  })
+  @ApiOperation({ summary: 'Create part (admin)' })
+  async create(
+    @Body('payload') payload: string,
+    @UploadedFiles() photos?: Express.Multer.File[],
+  ) {
+    const dto = await parseMultipartPayload(AdminCreatePartDto, payload);
+    const photoUrls = photos?.length
+      ? this.cloudinary.urlsFromAssets(
+          await this.cloudinary.uploadImages(photos, UploadFolder.PARTS),
+        )
+      : undefined;
+    return this.partsService.adminCreate({
+      ...dto,
+      ...(photoUrls ? { photoUrls } : {}),
+    });
+  }
+
+  @Patch(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('parts:manage')
+  @UseInterceptors(FilesInterceptor('photos', 10, imageMulterOptions))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: multipartPayloadSchema(
+      {
+        photos: { type: 'array', items: { type: 'string', format: 'binary' } },
+      },
+      [],
+    ),
+  })
+  @ApiOperation({ summary: 'Update part (admin)' })
+  async update(
+    @Param('id') id: string,
+    @Body('payload') payload: string | undefined,
+    @UploadedFiles() photos?: Express.Multer.File[],
+  ) {
+    const dto = payload?.trim()
+      ? await parseMultipartPayload(AdminUpdatePartDto, payload)
+      : {};
+    const photoUrls = photos?.length
+      ? this.cloudinary.urlsFromAssets(
+          await this.cloudinary.uploadImages(photos, UploadFolder.PARTS),
+        )
+      : undefined;
+    return this.partsService.adminUpdate(id, {
+      ...dto,
+      ...(photoUrls ? { photoUrls } : {}),
+    });
+  }
+
+  @Delete(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('parts:manage')
+  @ApiOperation({ summary: 'Permanently delete part' })
+  remove(@Param('id') id: string) {
+    return this.partsService.adminDelete(id);
   }
 
   @Patch(':id/activate')

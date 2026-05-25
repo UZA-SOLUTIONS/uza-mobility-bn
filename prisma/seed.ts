@@ -215,9 +215,50 @@ async function main() {
     plainPassword: 'Password123!',
     firstName: 'UZA',
     lastName: 'Admin',
-    roleNames: ['SUPER_ADMIN'],
+    roleNames: ['SUPER_ADMIN', 'SELLER'],
     preferredLanguage: 'en',
   });
+
+  const adminUser = await prisma.user.findUnique({
+    where: { email: 'admin@uza.local' },
+  });
+
+  if (adminUser) {
+    for (const sellerType of [
+      SellerType.UZA_RWANDA_STOCK,
+      SellerType.UZA_CHINA_SOURCING,
+    ] as const) {
+      const label =
+        sellerType === SellerType.UZA_RWANDA_STOCK
+          ? 'UZA Rwanda Stock'
+          : 'UZA China Sourcing';
+
+      await prisma.seller.upsert({
+        where: {
+          userId_sellerType: {
+            userId: adminUser.id,
+            sellerType,
+          },
+        },
+        update: {
+          businessName: label,
+          status: 'ACTIVE',
+          country: 'RW',
+          city: 'Kigali',
+          isVerified: true,
+        },
+        create: {
+          userId: adminUser.id,
+          businessName: label,
+          sellerType,
+          status: 'ACTIVE',
+          country: 'RW',
+          city: 'Kigali',
+          isVerified: true,
+        },
+      });
+    }
+  }
 
   await ensureUserWithRoles({
     email: 'buyer@uza.local',
@@ -279,10 +320,14 @@ async function main() {
 
   if (sellerUser) {
     await prisma.seller.upsert({
-      where: { userId: sellerUser.id },
+      where: {
+        userId_sellerType: {
+          userId: sellerUser.id,
+          sellerType: SellerType.LOCAL_SELLER,
+        },
+      },
       update: {
         businessName: 'Kigali EV Motors',
-        sellerType: SellerType.LOCAL_SELLER,
         status: 'ACTIVE',
         country: 'RW',
         city: 'Kigali',

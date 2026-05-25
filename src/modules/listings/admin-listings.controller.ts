@@ -9,9 +9,21 @@ import {
   Query,
   Req,
   UnauthorizedException,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  FileFieldsInterceptor,
+  FilesInterceptor,
+} from '@nestjs/platform-express';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -21,6 +33,14 @@ import type { AuthenticatedRequest } from '../../users/users.types';
 import { AdminCreateListingDto } from './dto/admin-create-listing.dto';
 import { AdminFilterListingsDto } from './dto/admin-filter-listings.dto';
 import { RejectListingDto } from './dto/reject-listing.dto';
+import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import {
+  documentMulterOptions,
+  imageMulterOptions,
+} from '../../common/uploads/multer.config';
+import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
+import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
+import { UploadFolder } from '../../common/uploads/upload.constants';
 import { UpdateVerificationDto } from './dto/update-verification.dto';
 import { ListingsService } from './listings.service';
 import { VerificationService } from './verification.service';
@@ -32,6 +52,7 @@ export class AdminListingsController {
   constructor(
     private readonly listingsService: ListingsService,
     private readonly verificationService: VerificationService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   @Get()
@@ -43,19 +64,45 @@ export class AdminListingsController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
+  @UseGuards(RolesGuard, PermissionsGuard)
+  @Roles('MARKETPLACE_ADMIN', 'SUPER_ADMIN')
   @RequirePermission('listings:create')
+  @UseInterceptors(FilesInterceptor('photos', 20, imageMulterOptions))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: multipartPayloadSchema({
+      photos: {
+        type: 'array',
+        items: { type: 'string', format: 'binary' },
+      },
+    }),
+  })
   @ApiOperation({
     summary:
       'Create UZA Rwanda stock or China sourcing listing (admin only, not seller flow)',
   })
   create(
     @Req() request: AuthenticatedRequest,
-    @Body() dto: AdminCreateListingDto,
+    @Body('payload') payload: string,
+    @UploadedFiles() photos?: Express.Multer.File[],
   ) {
-    return this.requireAdmin(request, (userId, ctx) =>
-      this.listingsService.createByAdmin(userId, dto, ctx),
-    );
+    return this.requireAdmin(request, async (userId, ctx) => {
+      const dto = await parseMultipartPayload(AdminCreateListingDto, payload);
+      const photoUrls = photos?.length
+        ? this.cloudinary.urlsFromAssets(
+            await this.cloudinary.uploadImages(photos, UploadFolder.LISTINGS),
+          )
+        : undefined;
+
+      return this.listingsService.createByAdmin(
+        userId,
+        {
+          ...dto,
+          ...(photoUrls ? { photoUrls } : {}),
+        },
+        ctx,
+      );
+    });
   }
 
   @Patch(':id/approve')
@@ -115,15 +162,63 @@ export class AdminListingsController {
   @Patch(':id/verification')
   @UseGuards(PermissionsGuard)
   @RequirePermission('listings:approve')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'report', maxCount: 1 },
+        { name: 'batteryReport', maxCount: 1 },
+      ],
+      documentMulterOptions,
+    ),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: multipartPayloadSchema({
+      report: { type: 'string', format: 'binary' },
+      batteryReport: { type: 'string', format: 'binary' },
+    }),
+  })
   @ApiOperation({ summary: 'Update listing verification' })
   verification(
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,
-    @Body() dto: UpdateVerificationDto,
+    @Body('payload') payload: string,
+    @UploadedFiles()
+    files?: {
+      report?: Express.Multer.File[];
+      batteryReport?: Express.Multer.File[];
+    },
   ) {
-    return this.requireAdmin(request, (userId, ctx) =>
-      this.verificationService.updateVerification(id, dto, userId, ctx),
-    );
+    return this.requireAdmin(request, async (userId, ctx) => {
+      const dto = await parseMultipartPayload(UpdateVerificationDto, payload);
+      const reportUrl = files?.report?.[0]
+        ? (
+            await this.cloudinary.uploadImage(
+              files.report[0],
+              UploadFolder.VERIFICATION,
+              files.report[0].mimetype === 'application/pdf' ? 'raw' : 'image',
+            )
+          ).url
+        : undefined;
+      const batteryReportUrl = files?.batteryReport?.[0]
+        ? (
+            await this.cloudinary.uploadImage(
+              files.batteryReport[0],
+              UploadFolder.VERIFICATION,
+              files.batteryReport[0].mimetype === 'application/pdf'
+                ? 'raw'
+                : 'image',
+            )
+          ).url
+        : undefined;
+
+      return this.verificationService.updateVerification(
+        id,
+        { ...dto, reportUrl, batteryReportUrl },
+        userId,
+        ctx,
+      );
+    });
   }
 
   @Delete(':id')

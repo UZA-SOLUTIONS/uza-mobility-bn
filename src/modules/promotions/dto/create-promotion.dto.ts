@@ -38,11 +38,6 @@ export class CreatePromotionDto {
   @Max(100)
   discountPercent?: number;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  bannerImageUrl?: string;
-
   @ApiPropertyOptional({ example: 'HOMEPAGE_TOP' })
   @IsOptional()
   @IsString()

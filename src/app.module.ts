@@ -27,12 +27,14 @@ import { SustainabilityModule } from './modules/sustainability/sustainability.mo
 import { FinancingModule } from './modules/financing/financing.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
+import { UploadsModule } from './common/uploads/uploads.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    UploadsModule,
     ScheduleModule.forRoot(),
     PrismaModule,
     AuditModule,

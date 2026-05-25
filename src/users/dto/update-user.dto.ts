@@ -25,9 +25,4 @@ export class UpdateUserDto {
   @IsString()
   @IsIn(['en', 'fr', 'rw'])
   preferredLanguage?: string;
-
-  @ApiPropertyOptional({ example: 'https://cdn.example.com/profile.jpg' })
-  @IsOptional()
-  @IsString()
-  profilePhoto?: string;
 }

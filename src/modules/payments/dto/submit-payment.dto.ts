@@ -1,12 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  ArrayMaxSize,
-  IsArray,
   IsDateString,
   IsNumber,
   IsOptional,
   IsString,
-  IsUrl,
   Min,
 } from 'class-validator';
 
@@ -49,14 +46,4 @@ export class SubmitPaymentDto {
   @IsOptional()
   @IsString()
   notes?: string;
-
-  @ApiPropertyOptional({
-    description: 'URLs of uploaded proof files (PDF/JPG/PNG)',
-    type: [String],
-  })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(10)
-  @IsUrl({}, { each: true })
-  proofUrls?: string[];
 }

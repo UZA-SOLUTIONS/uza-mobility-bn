@@ -9,6 +9,11 @@ import type { RequestAuditContext } from '../../common/audit/request-context.uti
 import { PrismaService } from '../../prisma/prisma.service';
 import { FilterSellersDto } from './dto/filter-sellers.dto';
 import { SuspendSellerDto } from './dto/suspend-seller.dto';
+import {
+  assertMarketplaceSellerModeration,
+  marketplaceSellerFilter,
+  MARKETPLACE_SELLER_TYPES,
+} from './seller-profile.util';
 
 const sellerListInclude = {
   user: {
@@ -40,6 +45,8 @@ export class SellersService {
 
     if (filters.sellerType) {
       where.sellerType = filters.sellerType;
+    } else {
+      where.sellerType = { in: MARKETPLACE_SELLER_TYPES };
     }
 
     if (filters.isVerified !== undefined) {
@@ -114,6 +121,7 @@ export class SellersService {
     auditContext: RequestAuditContext = {},
   ) {
     const seller = await this.getSellerOrThrow(sellerId);
+    assertMarketplaceSellerModeration(seller.sellerType);
 
     if (seller.status === SellerStatus.SUSPENDED) {
       throw new BadRequestException(
@@ -177,6 +185,7 @@ export class SellersService {
     auditContext: RequestAuditContext = {},
   ) {
     const seller = await this.getSellerOrThrow(sellerId);
+    assertMarketplaceSellerModeration(seller.sellerType);
 
     if (seller.status === SellerStatus.SUSPENDED) {
       throw new BadRequestException('Seller is already suspended');
@@ -214,6 +223,7 @@ export class SellersService {
     auditContext: RequestAuditContext = {},
   ) {
     const seller = await this.getSellerOrThrow(sellerId);
+    assertMarketplaceSellerModeration(seller.sellerType);
 
     if (seller.status !== SellerStatus.SUSPENDED) {
       throw new BadRequestException(
@@ -248,7 +258,9 @@ export class SellersService {
 
   /** Used by listings/parts before seller mutations. */
   async assertSellerCanTrade(userId: string) {
-    const seller = await this.prisma.seller.findUnique({ where: { userId } });
+    const seller = await this.prisma.seller.findFirst({
+      where: marketplaceSellerFilter(userId),
+    });
 
     if (!seller) {
       throw new NotFoundException('Seller profile not found');

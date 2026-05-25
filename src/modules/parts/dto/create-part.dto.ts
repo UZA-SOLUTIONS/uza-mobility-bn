@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PartCondition } from '@prisma/client';
 import {
-  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -9,7 +8,6 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUrl,
   Min,
 } from 'class-validator';
 
@@ -67,11 +65,4 @@ export class CreatePartDto {
   @IsOptional()
   @IsString()
   description?: string;
-
-  @ApiPropertyOptional({ type: [String], description: 'Photo URLs' })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(10)
-  @IsUrl({}, { each: true })
-  photoUrls?: string[];
 }

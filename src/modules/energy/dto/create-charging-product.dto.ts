@@ -1,14 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ChargingProductType } from '@prisma/client';
 import {
-  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsEnum,
   IsNumber,
   IsOptional,
   IsString,
-  IsUrl,
   Min,
 } from 'class-validator';
 
@@ -58,11 +56,4 @@ export class CreateChargingProductDto {
   @IsOptional()
   @IsString()
   description?: string;
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(10)
-  @IsUrl({}, { each: true })
-  photoUrls?: string[];
 }

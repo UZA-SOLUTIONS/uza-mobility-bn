@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { PromotionsModule } from '../promotions/promotions.module';
 import { SellersModule } from '../sellers/sellers.module';
+import { UsersModule } from '../../users/users.module';
 import { AdminListingsController } from './admin-listings.controller';
 import { ListingsController } from './listings.controller';
 import { ListingsService } from './listings.service';
@@ -10,7 +11,13 @@ import { SearchService } from './search.service';
 import { VerificationService } from './verification.service';
 
 @Module({
-  imports: [AuthModule, SellersModule, PricingModule, PromotionsModule],
+  imports: [
+    AuthModule,
+    UsersModule,
+    SellersModule,
+    PricingModule,
+    PromotionsModule,
+  ],
   controllers: [ListingsController, AdminListingsController],
   providers: [ListingsService, SearchService, VerificationService],
   exports: [ListingsService, SearchService],

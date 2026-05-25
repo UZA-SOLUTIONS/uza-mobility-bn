@@ -13,8 +13,10 @@ import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AttachPromotionDto } from './dto/attach-promotion.dto';
-import { CreatePromotionDto } from './dto/create-promotion.dto';
-import { UpdatePromotionDto } from './dto/update-promotion.dto';
+import type {
+  CreatePromotionPayload,
+  UpdatePromotionPayload,
+} from './dto/promotion-write.types';
 import {
   pickBestDiscountPromotion,
   type PromotionPriceDisplay,
@@ -68,7 +70,7 @@ export class PromotionsService {
   }
 
   async create(
-    dto: CreatePromotionDto,
+    dto: CreatePromotionPayload,
     adminUserId: string,
     auditContext: RequestAuditContext = {},
   ) {
@@ -103,7 +105,7 @@ export class PromotionsService {
 
   async update(
     id: string,
-    dto: UpdatePromotionDto,
+    dto: UpdatePromotionPayload,
     adminUserId: string,
     auditContext: RequestAuditContext = {},
   ) {
