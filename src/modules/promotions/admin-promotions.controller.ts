@@ -67,6 +67,14 @@ export class AdminPromotionsController {
     return this.promotionsService.findAllAdmin();
   }
 
+  @Get(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('promotions:create')
+  @ApiOperation({ summary: 'Promotion detail with attached listings' })
+  findOne(@Param('id') id: string) {
+    return this.promotionsService.findOneAdmin(id);
+  }
+
   @Post()
   @UseGuards(PermissionsGuard)
   @RequirePermission('promotions:create')
@@ -130,6 +138,16 @@ export class AdminPromotionsController {
         ctx,
       );
     });
+  }
+
+  @Patch(':id/activate')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('promotions:manage')
+  @ApiOperation({ summary: 'Reactivate a deactivated promotion' })
+  activate(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.requireAdmin(request, (adminId, ctx) =>
+      this.promotionsService.activate(id, adminId, ctx),
+    );
   }
 
   @Delete(':id')

@@ -69,6 +69,10 @@ export class PromotionsService {
     });
   }
 
+  async findOneAdmin(id: string) {
+    return this.getPromotionOrThrow(id, true);
+  }
+
   async create(
     dto: CreatePromotionPayload,
     adminUserId: string,
@@ -167,6 +171,39 @@ export class PromotionsService {
     });
 
     return promotion;
+  }
+
+  async activate(
+    id: string,
+    adminUserId: string,
+    auditContext: RequestAuditContext = {},
+  ) {
+    const existing = await this.getPromotionOrThrow(id);
+
+    if (existing.isActive) {
+      throw new BadRequestException('Promotion is already active');
+    }
+
+    if (existing.endDate < new Date()) {
+      throw new BadRequestException(
+        'Cannot reactivate a promotion that has ended. Extend the end date first.',
+      );
+    }
+
+    await this.prisma.promotion.update({
+      where: { id },
+      data: { isActive: true },
+    });
+
+    await this.auditService.record({
+      userId: adminUserId,
+      action: 'promotions:activated',
+      entity: 'Promotion',
+      metadata: { promotionId: id },
+      ...auditContext,
+    });
+
+    return this.getPromotionOrThrow(id, true);
   }
 
   async attachListings(
