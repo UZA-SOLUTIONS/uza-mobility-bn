@@ -100,7 +100,7 @@ export class AdminInvoicesController {
 
   @Post('fleet')
   @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles('FLEET_ADMIN', 'SUPER_ADMIN')
+  @Roles('FLEET_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN')
   @RequirePermission('invoices:send')
   @ApiOperation({ summary: 'Create fleet invoice manually' })
   createFleet(

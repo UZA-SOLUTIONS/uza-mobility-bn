@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { AuditService } from '../common/audit/audit.service';
 import type { RequestAuditContext } from '../common/audit/request-context.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminFilterBuyersDto } from './dto/admin-filter-buyers.dto';
 import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
 import { CreateSellerProfileDto } from './dto/create-seller-profile.dto';
 import type { UpdateSellerProfilePayload } from './dto/user-write.types';
@@ -69,6 +70,73 @@ export class UsersService {
     });
 
     return users.map((user) => this.toSafeUser(user));
+  }
+
+  async listBuyersForAdmin(filters: AdminFilterBuyersDto = {}) {
+    const q = filters.q?.trim();
+    const buyerAccountFilter: Prisma.UserWhereInput = {
+      isActive: true,
+      OR: [
+        { buyerProfile: { isNot: null } },
+        { roles: { some: { role: { name: 'BUYER' } } } },
+      ],
+    };
+
+    const where: Prisma.UserWhereInput = q
+      ? {
+          AND: [
+            buyerAccountFilter,
+            {
+              OR: [
+                { email: { contains: q, mode: 'insensitive' } },
+                { firstName: { contains: q, mode: 'insensitive' } },
+                { lastName: { contains: q, mode: 'insensitive' } },
+                { phone: { contains: q, mode: 'insensitive' } },
+                {
+                  buyerProfile: {
+                    organizationName: { contains: q, mode: 'insensitive' },
+                  },
+                },
+              ],
+            },
+          ],
+        }
+      : buyerAccountFilter;
+
+    const users = await this.prisma.user.findMany({
+      where,
+      include: { buyerProfile: true },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+      take: 200,
+    });
+
+    return users.map((user) => {
+      const name =
+        [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
+        user.email;
+      const organizationName = user.buyerProfile?.organizationName?.trim();
+      const displayName = organizationName
+        ? `${organizationName} (${name})`
+        : name;
+
+      return {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        displayName,
+        buyerProfile: user.buyerProfile
+          ? {
+              buyerType: user.buyerProfile.buyerType,
+              organizationName: user.buyerProfile.organizationName,
+              address: user.buyerProfile.address,
+              city: user.buyerProfile.city,
+              country: user.buyerProfile.country,
+            }
+          : null,
+      };
+    });
   }
 
   async createUser(data: Prisma.UserCreateInput): Promise<SafeUser> {

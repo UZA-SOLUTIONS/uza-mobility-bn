@@ -19,6 +19,11 @@ export class AdminFilterListingsDto {
   @IsEnum(SellerType)
   sellerType?: SellerType;
 
+  @ApiPropertyOptional({ description: 'Search title, brand, or model' })
+  @IsOptional()
+  @IsString()
+  q?: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)

@@ -612,6 +612,24 @@ export class ListingsService {
       where.sellerType = filters.sellerType;
     }
 
+    if (filters.q?.trim()) {
+      const q = filters.q.trim();
+      where.AND = [
+        ...(Array.isArray(where.AND)
+          ? where.AND
+          : where.AND
+            ? [where.AND]
+            : []),
+        {
+          OR: [
+            { listingTitle: { contains: q, mode: 'insensitive' } },
+            { brand: { contains: q, mode: 'insensitive' } },
+            { model: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+      ];
+    }
+
     const [rows, total] = await Promise.all([
       this.prisma.listing.findMany({
         where,
