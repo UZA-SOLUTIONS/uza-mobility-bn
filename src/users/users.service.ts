@@ -17,8 +17,10 @@ import {
   pickPrimaryMeSeller,
   sellerChannelKey,
 } from '../modules/sellers/seller-profile.util';
+import { NotificationsService } from '../modules/notifications/notifications.service';
 import { MeUserProfile, SafeUser } from './users.types';
 import type { SellerType } from '@prisma/client';
+import { NotificationType } from '@prisma/client';
 
 type UserWithRelations = Prisma.UserGetPayload<{
   include: { roles: { include: { role: true } } };
@@ -29,6 +31,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findByEmail(email: string): Promise<UserWithRelations | null> {
@@ -547,6 +550,21 @@ export class UsersService {
       return this.toSafeUser(refreshed);
     });
 
+    const roleLabel = finalRoleNames
+      .map((r) => r.replaceAll('_', ' '))
+      .join(', ');
+    await this.notificationsService.send({
+      userId,
+      type: NotificationType.SYSTEM_ALERT,
+      title: 'Your roles were updated',
+      body: `Your account roles are now: ${roleLabel}. Sign in again if you were logged in elsewhere.`,
+      metadata: {
+        previousRoles: existingRoleNames,
+        newRoles: finalRoleNames,
+      },
+      emailSubject: '[UZA Mobility] Your account roles were updated',
+    });
+
     return updated;
   }
 
@@ -582,6 +600,10 @@ export class UsersService {
     performedBy?: string,
     auditContext: RequestAuditContext = {},
   ): Promise<SafeUser> {
+    if (performedBy && performedBy === userId) {
+      throw new BadRequestException('You cannot deactivate your own account');
+    }
+
     let performerEmail = auditContext.actorEmail;
 
     if (!performerEmail && performedBy) {
@@ -626,6 +648,88 @@ export class UsersService {
       );
 
       return user;
+    });
+
+    await this.notificationsService.send({
+      userId,
+      type: NotificationType.SYSTEM_ALERT,
+      title: 'Your account was deactivated',
+      body: 'Your UZA Mobility account has been deactivated. Contact support if you believe this is a mistake.',
+      metadata: { performerEmail },
+      emailSubject: '[UZA Mobility] Your account was deactivated',
+      emailDespiteInactive: true,
+    });
+
+    return this.toSafeUser(updated);
+  }
+
+  async activateUser(
+    userId: string,
+    performedBy?: string,
+    auditContext: RequestAuditContext = {},
+  ): Promise<SafeUser> {
+    const existing = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        roles: { include: { role: true } },
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (existing.isActive && !existing.deletedAt) {
+      throw new BadRequestException('User is already active');
+    }
+
+    let performerEmail = auditContext.actorEmail;
+
+    if (!performerEmail && performedBy) {
+      const performer = await this.prisma.user.findUnique({
+        where: { id: performedBy },
+        select: { email: true },
+      });
+      performerEmail = performer?.email;
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: {
+          isActive: true,
+          deletedAt: null,
+        },
+        include: {
+          roles: { include: { role: true } },
+        },
+      });
+
+      await this.auditService.record(
+        {
+          userId: performedBy ?? null,
+          action: 'users:activated',
+          entity: 'User',
+          ipAddress: auditContext.ipAddress,
+          userAgent: auditContext.userAgent,
+          metadata: {
+            performerEmail,
+            targetEmail: user.email,
+          },
+        },
+        tx,
+      );
+
+      return user;
+    });
+
+    await this.notificationsService.send({
+      userId,
+      type: NotificationType.SYSTEM_ALERT,
+      title: 'Your account was reactivated',
+      body: 'Your UZA Mobility account is active again. You can sign in and use the platform.',
+      metadata: { performerEmail },
+      emailSubject: '[UZA Mobility] Your account was reactivated',
     });
 
     return this.toSafeUser(updated);

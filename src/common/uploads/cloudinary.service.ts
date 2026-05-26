@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   OnModuleInit,
   ServiceUnavailableException,
@@ -93,6 +94,51 @@ export class CloudinaryService implements OnModuleInit {
     return Promise.all(
       files.map((file) => this.uploadImage(file, folder, resourceType)),
     );
+  }
+
+  /** Validates buffers, uploads to Cloudinary, and surfaces readable API errors. */
+  async uploadImagesOrThrow(
+    files: Express.Multer.File[],
+    folder: UploadFolder,
+    resourceType: 'image' | 'raw' = 'image',
+  ): Promise<UploadedAsset[]> {
+    if (!files?.length) {
+      return [];
+    }
+
+    for (const file of files) {
+      if (!file.buffer?.length) {
+        throw new BadRequestException(
+          `"${file.originalname}" is empty or could not be read. Use JPEG, PNG, or WebP under 5MB.`,
+        );
+      }
+    }
+
+    try {
+      return await this.uploadImages(files, folder, resourceType);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const detail = this.formatCloudinaryError(error);
+      throw new BadRequestException(
+        detail ? `Photo upload failed: ${detail}` : 'Photo upload failed',
+      );
+    }
+  }
+
+  private formatCloudinaryError(error: unknown): string | undefined {
+    if (!error || typeof error !== 'object') {
+      return undefined;
+    }
+
+    const err = error as {
+      message?: string;
+      error?: { message?: string };
+    };
+
+    return err.message ?? err.error?.message;
   }
 
   urlsFromAssets(assets: UploadedAsset[]): string[] {

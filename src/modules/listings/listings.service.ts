@@ -20,7 +20,10 @@ import { CreateListingDto } from './dto/create-listing.dto';
 import { FilterListingsDto } from './dto/filter-listings.dto';
 import { RejectListingDto } from './dto/reject-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
-import type { AdminCreateListingPayload } from './dto/listing-write.types';
+import type {
+  AdminCreateListingPayload,
+  AdminUpdateListingPayload,
+} from './dto/listing-write.types';
 import { canTransition } from './listing-transitions';
 import {
   toAdminListing,
@@ -327,6 +330,122 @@ export class ListingsService {
     });
 
     return toAdminListing(listing);
+  }
+
+  async updateCreatedByAdmin(
+    adminUserId: string,
+    listingId: string,
+    dto: AdminUpdateListingPayload,
+    auditContext: RequestAuditContext = {},
+  ) {
+    const listing = await this.assertAdminOwnListingForEdit(
+      adminUserId,
+      listingId,
+    );
+
+    if (dto.sellerType && dto.sellerType !== listing.sellerType) {
+      throw new BadRequestException(
+        'Inventory channel cannot be changed after creation',
+      );
+    }
+
+    const { removePhotoIds, pricing, photoUrls, ...listingFields } = dto;
+
+    const normalizedSubcategoryId =
+      listingFields.subcategoryId === ''
+        ? undefined
+        : listingFields.subcategoryId;
+
+    if (listingFields.categoryId || listingFields.subcategoryId !== undefined) {
+      await this.validateCategoryRefs(
+        listingFields.categoryId ?? listing.categoryId,
+        normalizedSubcategoryId ?? listing.subcategoryId ?? undefined,
+      );
+    }
+
+    const sellerType = listing.sellerType;
+    const country = listingFields.country ?? listing.country;
+    let pricingCreate:
+      | Prisma.ListingPricingCreateWithoutListingInput
+      | undefined;
+    let deliveryDaysFromPricing: number | undefined;
+
+    if (pricing) {
+      const existingPricing = await this.prisma.listingPricing.findUnique({
+        where: { listingId },
+      });
+      const resolved = await this.resolveListingPricing(
+        sellerType,
+        country,
+        pricing,
+        existingPricing,
+      );
+      pricingCreate = resolved.pricing;
+      deliveryDaysFromPricing = resolved.deliveryDaysMax;
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.listing.update({
+        where: { id: listingId },
+        data: {
+          ...this.buildListingUpdateData(listingFields),
+          ...(deliveryDaysFromPricing !== undefined &&
+          listingFields.deliveryEstimateDays === undefined
+            ? { deliveryEstimateDays: deliveryDaysFromPricing }
+            : {}),
+        },
+      });
+
+      if (pricingCreate) {
+        await tx.listingPricing.upsert({
+          where: { listingId },
+          create: { listingId, ...pricingCreate },
+          update: pricingCreate,
+        });
+      }
+
+      if (removePhotoIds?.length) {
+        await this.removeAdminListingPhotos(tx, listingId, removePhotoIds);
+      }
+
+      if (photoUrls?.length) {
+        await this.appendAdminListingPhotos(tx, listingId, photoUrls);
+      }
+
+      const photoCount = await tx.listingPhoto.count({
+        where: { listingId },
+      });
+
+      if (photoCount < 1) {
+        throw new BadRequestException('At least one photo is required');
+      }
+
+      return tx.listing.findUnique({
+        where: { id: listingId },
+        include: adminListingInclude,
+      });
+    });
+
+    const updated = result;
+
+    if (!updated) {
+      throw new NotFoundException('Listing not found');
+    }
+
+    await this.auditService.record({
+      userId: adminUserId,
+      action: 'listings:admin-updated',
+      entity: 'Listing',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        email: auditContext.actorEmail,
+        listingTitle: updated.listingTitle,
+        slug: updated.slug,
+      },
+    });
+
+    return toAdminListing(updated);
   }
 
   async findMine(userId: string) {
@@ -1014,11 +1133,22 @@ export class ListingsService {
       data.category = { connect: { id: dto.categoryId } };
     }
 
-    if (dto.subcategoryId) {
-      data.subcategory = { connect: { id: dto.subcategoryId } };
+    if (dto.subcategoryId !== undefined) {
+      data.subcategory =
+        dto.subcategoryId && dto.subcategoryId.length > 0
+          ? { connect: { id: dto.subcategoryId } }
+          : { disconnect: true };
     }
 
-    return data;
+    return this.stripUndefinedListingUpdate(data);
+  }
+
+  private stripUndefinedListingUpdate(
+    data: Prisma.ListingUpdateInput,
+  ): Prisma.ListingUpdateInput {
+    return Object.fromEntries(
+      Object.entries(data).filter(([, value]) => value !== undefined),
+    ) as Prisma.ListingUpdateInput;
   }
 
   private async validateCategoryRefs(
@@ -1171,11 +1301,109 @@ export class ListingsService {
     return seller;
   }
 
+  private async assertAdminOwnListingForEdit(
+    adminUserId: string,
+    listingId: string,
+  ) {
+    const listing = await this.prisma.listing.findFirst({
+      where: { id: listingId, deletedAt: null },
+      include: adminListingInclude,
+    });
+
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+
+    if (listing.createdByUserId !== adminUserId) {
+      throw new ForbiddenException('You can only edit listings you created');
+    }
+
+    this.assertAdminOnlyListingType(listing.sellerType);
+
+    if (listing.status === ListingStatus.SOLD) {
+      throw new BadRequestException('Sold listings cannot be edited');
+    }
+
+    return listing;
+  }
+
   private assertAdminOnlyListingType(sellerType: SellerType): void {
     if (!ADMIN_ONLY_SELLER_TYPES.includes(sellerType)) {
       throw new BadRequestException(
         'Admin direct create is only for UZA_RWANDA_STOCK or UZA_CHINA_SOURCING listings',
       );
     }
+  }
+
+  private async removeAdminListingPhotos(
+    tx: Prisma.TransactionClient,
+    listingId: string,
+    photoIds: string[],
+  ): Promise<void> {
+    const uniqueIds = [...new Set(photoIds)];
+    if (!uniqueIds.length) {
+      return;
+    }
+
+    const photos = await tx.listingPhoto.findMany({
+      where: { listingId, id: { in: uniqueIds } },
+    });
+
+    if (photos.length !== uniqueIds.length) {
+      throw new BadRequestException(
+        'One or more photos were not found on this listing',
+      );
+    }
+
+    const removedPrimary = photos.some((photo) => photo.isPrimary);
+
+    await tx.listingPhoto.deleteMany({
+      where: { listingId, id: { in: uniqueIds } },
+    });
+
+    if (removedPrimary) {
+      const nextPrimary = await tx.listingPhoto.findFirst({
+        where: { listingId },
+        orderBy: { displayOrder: 'asc' },
+      });
+
+      if (nextPrimary) {
+        await tx.listingPhoto.updateMany({
+          where: { listingId },
+          data: { isPrimary: false },
+        });
+        await tx.listingPhoto.update({
+          where: { id: nextPrimary.id },
+          data: { isPrimary: true },
+        });
+      }
+    }
+  }
+
+  private async appendAdminListingPhotos(
+    tx: Prisma.TransactionClient,
+    listingId: string,
+    photoUrls: string[],
+  ): Promise<void> {
+    const existingCount = await tx.listingPhoto.count({
+      where: { listingId },
+    });
+
+    if (existingCount + photoUrls.length > 20) {
+      throw new BadRequestException('Maximum 20 photos per listing');
+    }
+
+    const hasPrimary = await tx.listingPhoto.count({
+      where: { listingId, isPrimary: true },
+    });
+
+    await tx.listingPhoto.createMany({
+      data: photoUrls.map((url, index) => ({
+        listingId,
+        url,
+        isPrimary: !hasPrimary && index === 0,
+        displayOrder: existingCount + index,
+      })),
+    });
   }
 }

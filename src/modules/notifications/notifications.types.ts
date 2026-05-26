@@ -13,6 +13,8 @@ export interface SendNotificationInput {
   metadata?: NotificationMetadata;
   /** Skip SMTP even when mail is enabled. */
   skipEmail?: boolean;
+  /** Send email even when the user account is deactivated (e.g. deactivation notice). */
+  emailDespiteInactive?: boolean;
   /** Skip WebSocket emit (e.g. batch jobs). */
   skipRealtime?: boolean;
   emailSubject?: string;

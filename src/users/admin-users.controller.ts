@@ -78,4 +78,16 @@ export class AdminUsersController {
       this.usersService.deactivateUser(id, adminId, ctx),
     );
   }
+
+  @Patch(':id/activate')
+  @SkipAudit()
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('users:manage-roles')
+  @ApiOperation({ summary: 'Reactivate a deactivated user' })
+  @ApiOkResponse({ description: 'Reactivated user' })
+  activate(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.requireAdmin(request, (adminId, ctx) =>
+      this.usersService.activateUser(id, adminId, ctx),
+    );
+  }
 }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -31,6 +32,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { getRequestAuditContext } from '../../common/audit/request-context.util';
 import type { AuthenticatedRequest } from '../../users/users.types';
 import { AdminCreateListingDto } from './dto/admin-create-listing.dto';
+import { AdminUpdateListingDto } from './dto/admin-update-listing.dto';
 import { AdminFilterListingsDto } from './dto/admin-filter-listings.dto';
 import { RejectListingDto } from './dto/reject-listing.dto';
 import { CloudinaryService } from '../../common/uploads/cloudinary.service';
@@ -90,12 +92,61 @@ export class AdminListingsController {
       const dto = await parseMultipartPayload(AdminCreateListingDto, payload);
       const photoUrls = photos?.length
         ? this.cloudinary.urlsFromAssets(
-            await this.cloudinary.uploadImages(photos, UploadFolder.LISTINGS),
+            await this.cloudinary.uploadImagesOrThrow(
+              photos,
+              UploadFolder.LISTINGS,
+            ),
           )
         : undefined;
 
       return this.listingsService.createByAdmin(
         userId,
+        {
+          ...dto,
+          ...(photoUrls ? { photoUrls } : {}),
+        },
+        ctx,
+      );
+    });
+  }
+
+  @Patch(':id')
+  @UseGuards(RolesGuard, PermissionsGuard)
+  @Roles('MARKETPLACE_ADMIN', 'SUPER_ADMIN')
+  @RequirePermission('listings:create')
+  @UseInterceptors(FilesInterceptor('photos', 20, imageMulterOptions))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: multipartPayloadSchema({
+      photos: {
+        type: 'array',
+        items: { type: 'string', format: 'binary' },
+      },
+    }),
+  })
+  @ApiOperation({
+    summary: 'Update a platform listing you created (UZA stock/sourcing only)',
+  })
+  update(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body('payload') payload: string,
+    @UploadedFiles() photos?: Express.Multer.File[],
+  ) {
+    return this.requireAdmin(request, async (userId, ctx) => {
+      const dto = await parseMultipartPayload(AdminUpdateListingDto, payload);
+      const photoUrls = photos?.length
+        ? this.cloudinary.urlsFromAssets(
+            await this.cloudinary.uploadImagesOrThrow(
+              photos,
+              UploadFolder.LISTINGS,
+            ),
+          )
+        : undefined;
+
+      return this.listingsService.updateCreatedByAdmin(
+        userId,
+        id,
         {
           ...dto,
           ...(photoUrls ? { photoUrls } : {}),

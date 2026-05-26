@@ -41,12 +41,16 @@ export class NotificationsService {
     }
 
     if (!input.skipEmail) {
-      void this.deliverEmail(input.userId, {
-        title: input.title,
-        body: input.body,
-        subject: input.emailSubject,
-        html: input.emailHtml,
-      }).catch((error) => {
+      void this.deliverEmail(
+        input.userId,
+        {
+          title: input.title,
+          body: input.body,
+          subject: input.emailSubject,
+          html: input.emailHtml,
+        },
+        input.emailDespiteInactive,
+      ).catch((error) => {
         this.logger.error(
           `Email delivery failed for user=${input.userId}: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -158,6 +162,7 @@ export class NotificationsService {
       subject?: string;
       html?: string;
     },
+    despiteInactive = false,
   ): Promise<void> {
     if (!this.mailService.isEnabled()) {
       return;
@@ -168,7 +173,11 @@ export class NotificationsService {
       select: { email: true, isActive: true, deletedAt: true },
     });
 
-    if (!user?.email || !user.isActive || user.deletedAt) {
+    if (!user?.email) {
+      return;
+    }
+
+    if (!despiteInactive && (!user.isActive || user.deletedAt)) {
       return;
     }
 

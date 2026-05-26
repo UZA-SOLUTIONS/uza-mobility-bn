@@ -2,9 +2,13 @@ export const UPLOAD_MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 export const UPLOAD_IMAGE_MIME_TYPES = [
   'image/jpeg',
+  'image/jpg',
+  'image/pjpeg',
   'image/png',
   'image/webp',
   'image/gif',
+  'image/heic',
+  'image/heif',
 ] as const;
 
 export const UPLOAD_DOCUMENT_MIME_TYPES = [
