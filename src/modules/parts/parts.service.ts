@@ -29,6 +29,24 @@ export class PartsService {
     return this.findPaginated(where, filters);
   }
 
+  async findMine(userId: string) {
+    const seller = await this.prisma.seller.findFirst({
+      where: marketplaceSellerFilter(userId),
+    });
+
+    if (!seller) {
+      throw new NotFoundException('Seller profile not found');
+    }
+
+    const rows = await this.prisma.part.findMany({
+      where: { sellerId: seller.id },
+      orderBy: { updatedAt: 'desc' },
+      include: { photos: true },
+    });
+
+    return rows.map(toPublicPart);
+  }
+
   async findById(id: string) {
     const part = await this.prisma.part.findFirst({
       where: { id, isActive: true },

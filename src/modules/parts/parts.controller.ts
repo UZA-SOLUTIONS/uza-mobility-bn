@@ -50,6 +50,19 @@ export class PartsController {
     return this.partsService.browse(filters);
   }
 
+  @Get('my')
+  @ApiBearerAuth('JWT-access')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('parts:create')
+  @ApiOperation({ summary: 'List own parts (includes inactive)' })
+  findMine(@Req() request: AuthenticatedRequest) {
+    const userId = request.user?.sub;
+    if (!userId) {
+      throw new UnauthorizedException();
+    }
+    return this.partsService.findMine(userId);
+  }
+
   @Get(':id')
   @Public()
   @ApiOperation({ summary: 'Part detail' })
