@@ -70,6 +70,7 @@ model User {
 
   roles             UserRole[]
   buyerProfile      BuyerProfile?
+  operatorProfile   OperatorProfile?
   sellers           Seller[]
   invoices          Invoice[]
   orders            Order[]
@@ -80,6 +81,7 @@ model User {
   savedListings     SavedListing[]
   notifications     Notification[]
   listingsCreated   Listing[]           @relation("ListingCreatedBy")
+  stationReviews    StationReview[]
 
   @@map("users")
 }
@@ -955,7 +957,233 @@ model PartPhoto {
 }
 
 // ============================================================
-// SECTION 15 — ENERGY & CHARGING PRODUCTS
+// SECTION 15 — CHARGING STATIONS
+// ============================================================
+
+enum OperatorStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+enum StationStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  ACTIVE
+  SUSPENDED
+  REJECTED
+  CLOSED
+}
+
+enum LocationType {
+  PUBLIC
+  PRIVATE
+  SEMI_PUBLIC
+  FLEET_ONLY
+}
+
+enum StationOperationalStatus {
+  OPERATIONAL
+  PARTIALLY_OPERATIONAL
+  OFFLINE
+  MAINTENANCE
+}
+
+enum ChargerType {
+  AC_TYPE2
+  DC_CCS
+  DC_CHADEMO
+  DC_GBDC
+  AC_TYPE1
+  TESLA_WALL
+}
+
+enum SpeedCategory {
+  SLOW
+  FAST
+  RAPID
+  ULTRA_RAPID
+}
+
+enum CurrentType {
+  AC
+  DC
+}
+
+enum PortStatus {
+  AVAILABLE
+  IN_USE
+  FAULTED
+  OUT_OF_SERVICE
+}
+
+enum StationPricingModel {
+  PER_KWH
+  PER_MINUTE
+  PER_SESSION
+  FREE
+}
+
+enum VehicleCategory {
+  PASSENGER_EV
+  TWO_THREE_WHEEL
+  COMMERCIAL_EV
+}
+
+model OperatorProfile {
+  id                 String         @id @default(cuid())
+  userId             String         @unique
+  businessName       String
+  businessRegNumber  String?
+  contactPerson      String
+  phone              String
+  email              String
+  country            String
+  city               String
+  address            String?
+  logoUrl            String?
+  description        String?
+  status             OperatorStatus @default(PENDING)
+  isVerified         Boolean        @default(false)
+  verifiedAt         DateTime?
+  adminNotes         String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stations           ChargingStation[]
+
+  @@map("operator_profiles")
+}
+
+model ChargingStation {
+  id                 String                   @id @default(cuid())
+  operatorId         String
+  name               String
+  slug               String                   @unique
+  status             StationStatus            @default(DRAFT)
+  description        String?
+  address            String
+  city               String
+  country            String
+  latitude           Float?
+  longitude          Float?
+  locationType       LocationType             @default(PUBLIC)
+  isOpen24h          Boolean                  @default(false)
+  openingHours       Json?
+  totalPorts         Int                      @default(0)
+  availablePorts     Int?
+  hasParking         Boolean                  @default(false)
+  hasWifi            Boolean                  @default(false)
+  hasRestroom        Boolean                  @default(false)
+  hasCCTV            Boolean                  @default(false)
+  hasRoofCover       Boolean                  @default(false)
+  operationalStatus  StationOperationalStatus @default(OPERATIONAL)
+  adminNotes         String?
+  publishedAt        DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  operator           OperatorProfile          @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  ports              ChargingPort[]
+  pricing            StationPricing[]
+  compatibleVehicles VehicleCompatibility[]
+  photos             StationPhoto[]
+  reviews            StationReview[]
+
+  @@index([city])
+  @@index([country])
+  @@index([status])
+  @@map("charging_stations")
+}
+
+model ChargingPort {
+  id            String        @id @default(cuid())
+  stationId     String
+  portNumber    String?
+  chargerType   ChargerType
+  speedCategory SpeedCategory
+  powerKw       Float
+  voltage       Int?
+  amperage      Int?
+  currentType   CurrentType
+  status        PortStatus    @default(AVAILABLE)
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  station       ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@map("charging_ports")
+}
+
+model StationPricing {
+  id           String             @id @default(cuid())
+  stationId    String
+  pricingModel StationPricingModel
+  rateAmount   Float?
+  currency     String             @default("USD")
+  notes        String?
+  isActive     Boolean            @default(true)
+  validFrom    DateTime           @default(now())
+  validUntil   DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  station      ChargingStation    @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@map("station_pricing")
+}
+
+model VehicleCompatibility {
+  id              String          @id @default(cuid())
+  stationId       String
+  vehicleCategory VehicleCategory
+  brand           String?
+  model           String?
+  isVerified      Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  station         ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@map("vehicle_compatibility")
+}
+
+model StationPhoto {
+  id           String          @id @default(cuid())
+  stationId    String
+  url          String
+  isPrimary    Boolean         @default(false)
+  displayOrder Int             @default(0)
+  uploadedAt   DateTime        @default(now())
+
+  station      ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@map("station_photos")
+}
+
+model StationReview {
+  id         String          @id @default(cuid())
+  stationId  String
+  userId     String
+  rating     Int
+  comment    String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  station    ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([stationId])
+  @@index([userId])
+  @@map("station_reviews")
+}
+
+// ============================================================
+// SECTION 16 — ENERGY & CHARGING PRODUCTS
 // ============================================================
 
 enum ChargingProductType {
@@ -1119,6 +1347,11 @@ enum NotificationType {
   LISTING_REJECTED
   FINANCING_UPDATE
   FLEET_REQUEST_UPDATE
+  OPERATOR_APPLICATION_APPROVED
+  OPERATOR_APPLICATION_REJECTED
+  STATION_APPROVED
+  STATION_REJECTED
+  STATION_SUSPENDED
   SYSTEM_ALERT
 }
 

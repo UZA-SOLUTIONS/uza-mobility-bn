@@ -121,6 +121,14 @@ async function seedPermissionsAndRoleMappings() {
     'parts:create',
     'parts:manage',
     'financing:submit',
+    'stations:create',
+    'stations:update',
+    'stations:submit',
+    'stations:read-own',
+    'stations:approve',
+    'stations:reject',
+    'stations:suspend',
+    'stations:read-all',
   ];
 
   const permissionRecords = await Promise.all(
@@ -139,6 +147,10 @@ async function seedPermissionsAndRoleMappings() {
       'sellers:verify',
       'sellers:suspend',
       'parts:manage',
+      'stations:approve',
+      'stations:reject',
+      'stations:suspend',
+      'stations:read-all',
     ],
     FINANCE_ADMIN: [
       'invoices:read',
@@ -156,6 +168,12 @@ async function seedPermissionsAndRoleMappings() {
     ADVERTISING_ADMIN: ['promotions:create', 'promotions:manage', 'listings:feature'],
     SALES_AGENT: ['listings:read', 'orders:read'],
     SELLER: ['listings:create', 'listings:read', 'parts:create'],
+    CHARGING_OPERATOR: [
+      'stations:create',
+      'stations:update',
+      'stations:submit',
+      'stations:read-own',
+    ],
     BUYER: [
       'listings:read',
       'invoices:create',
