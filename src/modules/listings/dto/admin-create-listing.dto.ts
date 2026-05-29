@@ -5,16 +5,15 @@ import { CreateListingDto } from './create-listing.dto';
 
 const ADMIN_CREATE_STATUSES = [
   ListingStatus.DRAFT,
-  ListingStatus.APPROVED,
-  ListingStatus.PUBLISHED,
+  ListingStatus.PENDING_REVIEW,
 ] as const;
 
 export class AdminCreateListingDto extends CreateListingDto {
   @ApiPropertyOptional({
     enum: ADMIN_CREATE_STATUSES,
-    default: ListingStatus.PUBLISHED,
+    default: ListingStatus.PENDING_REVIEW,
     description:
-      'UZA stock/sourcing listings are usually published immediately by admin',
+      'Admin listings enter review like seller listings; an administrator approves and publishes',
   })
   @IsOptional()
   @IsEnum(ListingStatus)

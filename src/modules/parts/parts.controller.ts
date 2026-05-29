@@ -33,6 +33,7 @@ import { UploadFolder } from '../../common/uploads/upload.constants';
 import { CreatePartDto } from './dto/create-part.dto';
 import { FilterPartsDto } from './dto/filter-parts.dto';
 import { UpdatePartDto } from './dto/update-part.dto';
+import { PreviewPartPricingDto } from './dto/preview-part-pricing.dto';
 import { PartsService } from './parts.service';
 
 @ApiTags('parts')
@@ -61,6 +62,24 @@ export class PartsController {
       throw new UnauthorizedException();
     }
     return this.partsService.findMine(userId);
+  }
+
+  @Post('pricing-preview')
+  @ApiBearerAuth('JWT-access')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('parts:create')
+  @ApiOperation({
+    summary: 'Preview buyer price and platform fee from desired payout',
+  })
+  previewPricing(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: PreviewPartPricingDto,
+  ) {
+    const userId = request.user?.sub;
+    if (!userId) {
+      throw new UnauthorizedException();
+    }
+    return this.partsService.previewPricingForSeller(userId, dto);
   }
 
   @Get(':id')

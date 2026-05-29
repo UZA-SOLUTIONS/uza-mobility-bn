@@ -31,6 +31,7 @@ import { UploadFolder } from '../../common/uploads/upload.constants';
 import { AdminCreatePartDto } from './dto/admin-create-part.dto';
 import { FilterPartsDto } from './dto/filter-parts.dto';
 import { AdminUpdatePartDto } from './dto/admin-update-part.dto';
+import { RejectPartDto } from './dto/reject-part.dto';
 import { PartsService } from './parts.service';
 
 @ApiTags('admin')
@@ -128,10 +129,24 @@ export class AdminPartsController {
     return this.partsService.adminDelete(id);
   }
 
+  @Patch(':id/approve')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Approve part listing (administrator only)' })
+  approve(@Param('id') id: string) {
+    return this.partsService.adminApprove(id);
+  }
+
+  @Patch(':id/reject')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Reject part listing (administrator only)' })
+  reject(@Param('id') id: string, @Body() dto: RejectPartDto) {
+    return this.partsService.adminReject(id, dto);
+  }
+
   @Patch(':id/activate')
   @UseGuards(PermissionsGuard)
   @RequirePermission('parts:manage')
-  @ApiOperation({ summary: 'Activate part listing' })
+  @ApiOperation({ summary: 'Activate approved part listing' })
   activate(@Param('id') id: string) {
     return this.partsService.adminSetActive(id, true);
   }

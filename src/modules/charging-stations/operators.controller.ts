@@ -6,13 +6,10 @@ import {
   Post,
   Req,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { getRequestAuditContext } from '../../common/audit/request-context.util';
 import type { AuthenticatedRequest } from '../../users/users.types';
-import { RequirePermission } from '../auth/decorators/permissions.decorator';
-import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { ChargingStationsService } from './charging-stations.service';
 import { CreateOperatorProfileDto } from './dto/create-operator-profile.dto';
 import { UpdateOperatorProfileDto } from './dto/update-operator-profile.dto';
@@ -46,8 +43,6 @@ export class OperatorsController {
   }
 
   @Get('me')
-  @UseGuards(PermissionsGuard)
-  @RequirePermission('stations:read-own')
   @ApiOperation({ summary: 'My operator profile' })
   me(@Req() request: AuthenticatedRequest) {
     return this.stationsService.getOperatorProfileByUser(
@@ -56,8 +51,6 @@ export class OperatorsController {
   }
 
   @Patch('me')
-  @UseGuards(PermissionsGuard)
-  @RequirePermission('stations:update')
   @ApiOperation({ summary: 'Update my operator profile' })
   updateMe(
     @Req() request: AuthenticatedRequest,

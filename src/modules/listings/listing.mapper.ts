@@ -65,20 +65,20 @@ export function toPublicListing<T extends ListingWithRelations>(
   };
 }
 
-/** Seller's own listings — includes rejection notes when rejected. */
+/** Seller's own listings — full pricing breakdown and EV specs. */
 export function toSellerListing<T extends ListingWithRelations>(listing: T) {
   const base = toPublicListing(listing);
   const adminNotes = (listing as Listing & { adminNotes?: string | null })
     .adminNotes;
 
-  if (listing.status === ListingStatus.REJECTED && adminNotes) {
-    return {
-      ...base,
-      rejectionReason: adminNotes,
-    };
-  }
-
-  return base;
+  return {
+    ...base,
+    listingPricing: listing.listingPricing,
+    evSpecs: listing.evSpecs ?? null,
+    ...(listing.status === ListingStatus.REJECTED && adminNotes
+      ? { rejectionReason: adminNotes }
+      : {}),
+  };
 }
 
 export function toAdminListing<T extends Listing & Record<string, unknown>>(

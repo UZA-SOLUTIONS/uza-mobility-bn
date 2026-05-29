@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { PartCondition } from '@prisma/client';
+import { PartCondition, PartStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -37,6 +37,11 @@ export class FilterPartsDto {
   @IsOptional()
   @IsEnum(PartCondition)
   condition?: PartCondition;
+
+  @ApiPropertyOptional({ enum: PartStatus })
+  @IsOptional()
+  @IsEnum(PartStatus)
+  status?: PartStatus;
 
   @ApiPropertyOptional()
   @IsOptional()

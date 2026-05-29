@@ -15,7 +15,7 @@ export class DashboardController {
 
   @Get()
   @SkipAudit()
-  @ApiOperation({ summary: 'Super admin dashboard overview metrics' })
+  @ApiOperation({ summary: 'Administrator dashboard overview metrics' })
   overview() {
     return this.dashboardService.getOverview();
   }

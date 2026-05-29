@@ -1,9 +1,15 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  NotificationType,
+  PartStatus,
+  Prisma,
+  SellerType,
+} from '@prisma/client';
 import { resolveUniqueSlug } from '../../common/utils/slug.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SellersService } from '../sellers/sellers.service';
@@ -15,13 +21,19 @@ import type {
   CreatePartPayload,
   UpdatePartPayload,
 } from './dto/part-write.types';
-import { toPublicPart } from './part.mapper';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PricingService } from '../pricing/pricing.service';
+import { toPublicPart, toSellerPart } from './part.mapper';
+import type { PreviewPartPricingDto } from './dto/preview-part-pricing.dto';
+import type { RejectPartDto } from './dto/reject-part.dto';
 
 @Injectable()
 export class PartsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sellersService: SellersService,
+    private readonly pricingService: PricingService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async browse(filters: FilterPartsDto) {
@@ -44,12 +56,12 @@ export class PartsService {
       include: { photos: true },
     });
 
-    return rows.map(toPublicPart);
+    return rows.map(toSellerPart);
   }
 
   async findById(id: string) {
     const part = await this.prisma.part.findFirst({
-      where: { id, isActive: true },
+      where: { id, isActive: true, status: PartStatus.APPROVED },
       include: {
         photos: true,
         seller: { select: { businessName: true, city: true } },
@@ -86,7 +98,8 @@ export class PartsService {
         hasWarranty: dto.hasWarranty ?? false,
         warrantyDetails: dto.warrantyDetails,
         description: dto.description,
-        isActive: true,
+        status: PartStatus.PENDING_REVIEW,
+        isActive: false,
         photos: dto.photoUrls?.length
           ? {
               create: dto.photoUrls.map((url, index) => ({
@@ -99,12 +112,44 @@ export class PartsService {
       include: { photos: true },
     });
 
-    return toPublicPart(part);
+    await this.notificationsService.sendToRoleNames(['SUPER_ADMIN'], {
+      type: NotificationType.SYSTEM_ALERT,
+      title: 'Part submitted for review',
+      body: `${part.name} is pending administrator approval.`,
+      metadata: { partId: part.id, slug: part.slug },
+    });
+
+    return toSellerPart(part);
+  }
+
+  async previewPricingForSeller(userId: string, dto: PreviewPartPricingDto) {
+    await this.sellersService.assertSellerCanTrade(userId);
+    const seller = await this.prisma.seller.findFirst({
+      where: marketplaceSellerFilter(userId),
+    });
+    if (!seller) {
+      throw new NotFoundException('Seller profile not found');
+    }
+
+    return this.pricingService.calculatePrice(
+      SellerType.LOCAL_SELLER,
+      { sellerDesiredPayoutUsd: dto.desiredPayoutUsd },
+      seller.country,
+    );
   }
 
   async updateOwn(userId: string, partId: string, dto: UpdatePartPayload) {
     await this.sellersService.assertSellerCanTrade(userId);
     const part = await this.getOwnedPart(userId, partId);
+
+    if (
+      part.status !== PartStatus.PENDING_REVIEW &&
+      part.status !== PartStatus.REJECTED
+    ) {
+      throw new BadRequestException(
+        'Only pending or rejected parts can be edited',
+      );
+    }
 
     const updated = await this.prisma.part.update({
       where: { id: part.id },
@@ -120,6 +165,9 @@ export class PartsService {
         hasWarranty: dto.hasWarranty,
         warrantyDetails: dto.warrantyDetails,
         description: dto.description,
+        status: PartStatus.PENDING_REVIEW,
+        isActive: false,
+        adminNotes: null,
       },
       include: { photos: true },
     });
@@ -130,10 +178,21 @@ export class PartsService {
         dto.photoUrls,
         updated.photos.length,
       );
-      return this.findById(part.id);
+      const refreshed = await this.prisma.part.findUnique({
+        where: { id: part.id },
+        include: { photos: true },
+      });
+      return toSellerPart(refreshed!);
     }
 
-    return toPublicPart(updated);
+    await this.notificationsService.sendToRoleNames(['SUPER_ADMIN'], {
+      type: NotificationType.SYSTEM_ALERT,
+      title: 'Part resubmitted for review',
+      body: `${updated.name} is pending administrator approval.`,
+      metadata: { partId: updated.id, slug: updated.slug },
+    });
+
+    return toSellerPart(updated);
   }
 
   async deleteOwn(userId: string, partId: string) {
@@ -198,7 +257,8 @@ export class PartsService {
         hasWarranty: dto.hasWarranty ?? false,
         warrantyDetails: dto.warrantyDetails,
         description: dto.description,
-        isActive: true,
+        status: PartStatus.PENDING_REVIEW,
+        isActive: false,
         photos: dto.photoUrls?.length
           ? {
               create: dto.photoUrls.map((url, index) => ({
@@ -211,7 +271,82 @@ export class PartsService {
       include: { photos: true },
     });
 
+    await this.notificationsService.sendToRoleNames(['SUPER_ADMIN'], {
+      type: NotificationType.SYSTEM_ALERT,
+      title: 'Part submitted for review',
+      body: `${part.name} is pending administrator approval.`,
+      metadata: { partId: part.id, slug: part.slug },
+    });
+
     return toPublicPart(part);
+  }
+
+  async adminApprove(partId: string) {
+    const part = await this.getPartOrThrow(partId);
+    if (part.status !== PartStatus.PENDING_REVIEW) {
+      throw new BadRequestException(
+        `Cannot approve part in status ${part.status}`,
+      );
+    }
+
+    const updated = await this.prisma.part.update({
+      where: { id: partId },
+      data: { status: PartStatus.APPROVED, isActive: true, adminNotes: null },
+      include: { photos: true },
+    });
+
+    if (part.sellerId) {
+      const seller = await this.prisma.seller.findUnique({
+        where: { id: part.sellerId },
+      });
+      if (seller) {
+        await this.notificationsService.send({
+          userId: seller.userId,
+          type: NotificationType.LISTING_APPROVED,
+          title: 'Your part listing is approved',
+          body: `${updated.name} is now visible in the marketplace.`,
+          metadata: { partId: updated.id, slug: updated.slug },
+        });
+      }
+    }
+
+    return toPublicPart(updated);
+  }
+
+  async adminReject(partId: string, dto: RejectPartDto) {
+    const part = await this.getPartOrThrow(partId);
+    if (part.status !== PartStatus.PENDING_REVIEW) {
+      throw new BadRequestException(
+        `Cannot reject part in status ${part.status}`,
+      );
+    }
+
+    const updated = await this.prisma.part.update({
+      where: { id: partId },
+      data: {
+        status: PartStatus.REJECTED,
+        isActive: false,
+        adminNotes: dto.reason,
+      },
+      include: { photos: true },
+    });
+
+    if (part.sellerId) {
+      const seller = await this.prisma.seller.findUnique({
+        where: { id: part.sellerId },
+      });
+      if (seller) {
+        await this.notificationsService.send({
+          userId: seller.userId,
+          type: NotificationType.LISTING_REJECTED,
+          title: 'Part listing rejected',
+          body: dto.reason,
+          metadata: { partId: updated.id, slug: updated.slug },
+        });
+      }
+    }
+
+    return toPublicPart(updated);
   }
 
   async adminUpdate(partId: string, dto: AdminUpdatePartPayload) {
@@ -260,20 +395,31 @@ export class PartsService {
   }
 
   async adminSetActive(partId: string, isActive: boolean) {
-    await this.getPartOrThrow(partId);
-    const part = await this.prisma.part.update({
+    const part = await this.getPartOrThrow(partId);
+    if (isActive && part.status !== PartStatus.APPROVED) {
+      throw new BadRequestException(
+        'Only approved parts can be activated for public browse',
+      );
+    }
+    const updated = await this.prisma.part.update({
       where: { id: partId },
       data: { isActive },
       include: { photos: true },
     });
-    return toPublicPart(part);
+    return toPublicPart(updated);
   }
 
   private buildWhere(
     filters: FilterPartsDto,
     publicOnly: boolean,
   ): Prisma.PartWhereInput {
-    const where: Prisma.PartWhereInput = publicOnly ? { isActive: true } : {};
+    const where: Prisma.PartWhereInput = publicOnly
+      ? { isActive: true, status: PartStatus.APPROVED }
+      : {};
+
+    if (filters.status) {
+      where.status = filters.status;
+    }
 
     if (filters.q) {
       where.OR = [

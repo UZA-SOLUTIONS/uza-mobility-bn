@@ -75,7 +75,7 @@ export class AdminOrdersController {
   @Patch(':id/cancel')
   @UseGuards(RolesGuard)
   @Roles('SUPER_ADMIN')
-  @ApiOperation({ summary: 'Cancel order (super admin only)' })
+  @ApiOperation({ summary: 'Cancel order (administrator only)' })
   cancel(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.requireAdmin(request, (adminId, ctx) =>
       this.ordersService.cancelOrder(id, adminId, ctx),

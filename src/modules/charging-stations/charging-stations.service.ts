@@ -18,6 +18,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RbacService } from '../auth/rbac.service';
 import { CreateChargingPortDto } from './dto/create-charging-port.dto';
 import { CreateOperatorProfileDto } from './dto/create-operator-profile.dto';
 import { CreateStationDto } from './dto/create-station.dto';
@@ -59,6 +60,7 @@ export class ChargingStationsService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
+    private readonly rbacService: RbacService,
   ) {}
 
   async applyOperator(
@@ -130,6 +132,29 @@ export class ChargingStationsService {
     auditContext: RequestAuditContext = {},
   ) {
     const existing = await this.getOperatorProfileByUser(userId);
+
+    if (existing.status === OperatorStatus.ACTIVE) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { roles: { include: { role: true } } },
+      });
+      const roleNames =
+        user?.roles.map((entry) => entry.role.name).filter(Boolean) ?? [];
+      const permissions =
+        await this.rbacService.resolvePermissionsForRoleNames(roleNames);
+      const canUpdate =
+        permissions.includes('*') || permissions.includes('stations:update');
+      if (!canUpdate) {
+        throw new ForbiddenException(
+          'Operator profile updates require an approved charging operator account',
+        );
+      }
+    } else if (existing.status === OperatorStatus.SUSPENDED) {
+      throw new ForbiddenException(
+        'Suspended operator profiles cannot be updated',
+      );
+    }
+
     const updated = await this.prisma.operatorProfile.update({
       where: { id: existing.id },
       data: {

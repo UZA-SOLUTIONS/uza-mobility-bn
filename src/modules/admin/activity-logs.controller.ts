@@ -22,7 +22,7 @@ export class ActivityLogsController {
   @Get()
   @SkipAudit()
   @ApiOperation({
-    summary: 'List platform activity logs (super admin only)',
+    summary: 'List platform activity logs (administrator only)',
     description:
       'All query parameters are optional. Leave filters empty to return every log. ' +
       'Response shape: { success, data: ActivityLog[], meta: { total, page, limit, totalPages } }. ' +

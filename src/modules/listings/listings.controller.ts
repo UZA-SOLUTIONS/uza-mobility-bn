@@ -36,6 +36,7 @@ import { UploadFolder } from '../../common/uploads/upload.constants';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { FilterListingsDto } from './dto/filter-listings.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
+import { PreviewListingPricingDto } from './dto/preview-listing-pricing.dto';
 import { ListingsService } from './listings.service';
 
 @ApiTags('listings')
@@ -124,6 +125,24 @@ export class ListingsController {
       dto,
       getRequestAuditContext(request),
     );
+  }
+
+  @Post('pricing-preview')
+  @ApiBearerAuth('JWT-access')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('listings:create')
+  @ApiOperation({
+    summary: 'Preview buyer price and platform fees from seller cost inputs',
+  })
+  previewPricing(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: PreviewListingPricingDto,
+  ) {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    return this.listingsService.previewPricingForSeller(request.user.sub, dto);
   }
 
   @Get(':slug')

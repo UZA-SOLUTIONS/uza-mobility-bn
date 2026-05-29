@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BuyerType, SellerStatus, SellerType } from '@prisma/client';
+import {
+  BuyerType,
+  OperatorStatus,
+  SellerStatus,
+  SellerType,
+} from '@prisma/client';
 
 export class MeBuyerProfileDto {
   @ApiProperty()
@@ -16,6 +21,20 @@ export class MeBuyerProfileDto {
 
   @ApiProperty()
   country!: string;
+
+  @ApiProperty()
+  isVerified!: boolean;
+}
+
+export class MeOperatorDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ enum: OperatorStatus })
+  status!: OperatorStatus;
+
+  @ApiProperty()
+  businessName!: string;
 
   @ApiProperty()
   isVerified!: boolean;
@@ -96,6 +115,9 @@ export class MeResponseDto {
 
   @ApiProperty({ type: [MeSellerDto] })
   sellers!: MeSellerDto[];
+
+  @ApiPropertyOptional({ type: MeOperatorDto, nullable: true })
+  operator!: MeOperatorDto | null;
 
   @ApiProperty()
   createdAt!: Date;

@@ -920,6 +920,12 @@ enum PartCondition {
   REFURBISHED
 }
 
+enum PartStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
 model Part {
   id               String        @id @default(cuid())
   sellerId         String?
@@ -935,7 +941,9 @@ model Part {
   hasWarranty      Boolean       @default(false)
   warrantyDetails  String?
   description      String?
-  isActive         Boolean       @default(true)
+  status           PartStatus    @default(PENDING_REVIEW)
+  adminNotes       String?
+  isActive         Boolean       @default(false)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 

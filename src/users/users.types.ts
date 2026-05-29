@@ -1,17 +1,29 @@
 import type { Request } from 'express';
-import type { BuyerProfile, Seller, User } from '@prisma/client';
+import type {
+  BuyerProfile,
+  OperatorProfile,
+  Seller,
+  User,
+} from '@prisma/client';
 
 export type SafeUser = Omit<User, 'passwordHash'> & {
   roles: string[];
 };
 
 /** Profile payload from GET /auth/me (permissions added in AuthService). */
+export type MeOperatorSummary = Pick<
+  OperatorProfile,
+  'id' | 'status' | 'businessName' | 'isVerified'
+>;
+
 export type MeUserProfile = SafeUser & {
   buyerProfile: BuyerProfile | null;
   /** All seller profiles (one per inventory channel). */
   sellers: Seller[];
   /** Primary profile for account UI (marketplace seller if any, else first). */
   seller: Seller | null;
+  /** Charging operator application / approved profile, if any. */
+  operator: MeOperatorSummary | null;
 };
 
 export type MeSession = MeUserProfile & {

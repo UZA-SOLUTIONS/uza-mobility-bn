@@ -52,6 +52,11 @@ import {
 import type { CreateListingPricingDto } from './dto/create-listing-pricing.dto';
 import { PromotionsService } from '../promotions/promotions.service';
 import { SearchService } from './search.service';
+import {
+  assertListingEvSpecs,
+  mergeListingEvSpecInput,
+} from './listing-ev-spec.util';
+import type { PreviewListingPricingDto } from './dto/preview-listing-pricing.dto';
 
 type ListingSellerNotifyTarget = {
   listingTitle: string;
@@ -218,6 +223,7 @@ export class ListingsService {
 
     const seller = await this.sellersService.assertSellerCanTrade(userId);
     await this.validateCategoryRefs(dto.categoryId, dto.subcategoryId);
+    assertListingEvSpecs({ condition: dto.condition, evSpecs: dto.evSpecs });
 
     const slug = await this.uniqueListingSlug(
       dto.brand,
@@ -256,7 +262,12 @@ export class ListingsService {
       },
     });
 
-    return toPublicListing(listing);
+    const withPricing = await this.prisma.listing.findUnique({
+      where: { id: listing.id },
+      include: publicListingInclude,
+    });
+
+    return toSellerListing(withPricing ?? listing);
   }
 
   async createByAdmin(
@@ -273,8 +284,18 @@ export class ListingsService {
     );
 
     await this.validateCategoryRefs(dto.categoryId, dto.subcategoryId);
+    assertListingEvSpecs({ condition: dto.condition, evSpecs: dto.evSpecs });
 
-    const initialStatus = dto.initialStatus ?? ListingStatus.PUBLISHED;
+    const initialStatus = dto.initialStatus ?? ListingStatus.PENDING_REVIEW;
+
+    if (
+      initialStatus === ListingStatus.PENDING_REVIEW &&
+      !dto.photoUrls?.length
+    ) {
+      throw new BadRequestException(
+        'At least one photo is required when submitting for review',
+      );
+    }
     const slug = await this.uniqueListingSlug(
       dto.brand,
       dto.model,
@@ -299,8 +320,7 @@ export class ListingsService {
         ),
         status: initialStatus,
         createdBy: { connect: { id: adminUserId } },
-        publishedAt:
-          initialStatus === ListingStatus.PUBLISHED ? new Date() : undefined,
+        publishedAt: undefined,
         photos: dto.photoUrls?.length
           ? {
               create: dto.photoUrls.map((url, index) => ({
@@ -329,7 +349,46 @@ export class ListingsService {
       },
     });
 
+    if (initialStatus === ListingStatus.PENDING_REVIEW) {
+      await this.notificationsService.sendToRoleNames(['SUPER_ADMIN'], {
+        type: NotificationType.SYSTEM_ALERT,
+        title: 'Listing submitted for review',
+        body: `${listing.listingTitle} is pending administrator approval.`,
+        metadata: {
+          listingId: listing.id,
+          slug: listing.slug,
+        },
+      });
+    }
+
     return toAdminListing(listing);
+  }
+
+  async previewPricingForSeller(userId: string, dto: PreviewListingPricingDto) {
+    const seller = await this.sellersService.assertSellerCanTrade(userId);
+    const sellerType = seller.sellerType;
+
+    if (
+      sellerType !== SellerType.LOCAL_SELLER &&
+      sellerType !== SellerType.INTERNATIONAL_SELLER
+    ) {
+      throw new BadRequestException('Unsupported seller type for preview');
+    }
+
+    const pricingInput = {
+      basePriceUsd: dto.basePriceUsd,
+      fobPriceUsd: dto.fobPriceUsd,
+      sellerDesiredPayoutUsd: dto.sellerDesiredPayoutUsd,
+      discountUsd: dto.discountUsd,
+    };
+
+    assertListingPricingInput(sellerType, pricingInput);
+
+    return this.pricingService.calculatePrice(
+      sellerType,
+      toPricingInput(pricingInput),
+      dto.country ?? seller.country,
+    );
   }
 
   async updateCreatedByAdmin(
@@ -510,6 +569,17 @@ export class ListingsService {
       deliveryDaysFromPricing = resolved.deliveryDaysMax;
     }
 
+    const existingEvSpecs = await this.prisma.evSpec.findUnique({
+      where: { listingId },
+    });
+
+    if (dto.evSpecs || dto.condition) {
+      assertListingEvSpecs({
+        condition: dto.condition ?? listing.condition,
+        evSpecs: mergeListingEvSpecInput(dto.evSpecs, existingEvSpecs),
+      });
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const core = await tx.listing.update({
         where: { id: listingId },
@@ -635,18 +705,15 @@ export class ListingsService {
       },
     });
 
-    await this.notificationsService.sendToRoleNames(
-      ['MARKETPLACE_ADMIN', 'SUPER_ADMIN'],
-      {
-        type: NotificationType.SYSTEM_ALERT,
-        title: 'Listing submitted for review',
-        body: `${updated.listingTitle} is pending approval.`,
-        metadata: {
-          listingId: updated.id,
-          slug: updated.slug,
-        },
+    await this.notificationsService.sendToRoleNames(['SUPER_ADMIN'], {
+      type: NotificationType.SYSTEM_ALERT,
+      title: 'Listing submitted for review',
+      body: `${updated.listingTitle} is pending approval.`,
+      metadata: {
+        listingId: updated.id,
+        slug: updated.slug,
       },
-    );
+    });
 
     return toSellerListing(updated);
   }

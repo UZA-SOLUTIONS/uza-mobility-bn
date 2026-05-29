@@ -252,6 +252,7 @@ export class UsersService {
         },
         buyerProfile: true,
         sellers: true,
+        operatorProfile: true,
       },
     });
 
@@ -259,13 +260,21 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    const { buyerProfile, sellers, ...userRecord } = user;
+    const { buyerProfile, sellers, operatorProfile, ...userRecord } = user;
 
     return {
       ...this.toSafeUser(userRecord),
       buyerProfile,
       sellers,
       seller: pickPrimaryMeSeller(sellers),
+      operator: operatorProfile
+        ? {
+            id: operatorProfile.id,
+            status: operatorProfile.status,
+            businessName: operatorProfile.businessName,
+            isVerified: operatorProfile.isVerified,
+          }
+        : null,
     };
   }
 

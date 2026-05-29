@@ -140,8 +140,6 @@ async function seedPermissionsAndRoleMappings() {
     MARKETPLACE_ADMIN: [
       'listings:create',
       'listings:read',
-      'listings:approve',
-      'listings:reject',
       'listings:feature',
       'listings:delete',
       'sellers:verify',

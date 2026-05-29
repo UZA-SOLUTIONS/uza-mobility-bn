@@ -157,9 +157,11 @@ export class AdminListingsController {
   }
 
   @Patch(':id/approve')
-  @UseGuards(PermissionsGuard)
-  @RequirePermission('listings:approve')
-  @ApiOperation({ summary: 'Approve listing (status → APPROVED)' })
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({
+    summary: 'Approve listing (status → APPROVED, administrator only)',
+  })
   approve(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.requireAdmin(request, (userId, ctx) =>
       this.listingsService.adminApprove(id, userId, ctx),
@@ -167,9 +169,9 @@ export class AdminListingsController {
   }
 
   @Patch(':id/publish')
-  @UseGuards(PermissionsGuard)
-  @RequirePermission('listings:approve')
-  @ApiOperation({ summary: 'Publish approved listing' })
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Publish approved listing (administrator only)' })
   publish(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.requireAdmin(request, (userId, ctx) =>
       this.listingsService.adminPublish(id, userId, ctx),
@@ -177,9 +179,9 @@ export class AdminListingsController {
   }
 
   @Patch(':id/reject')
-  @UseGuards(PermissionsGuard)
-  @RequirePermission('listings:reject')
-  @ApiOperation({ summary: 'Reject listing' })
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Reject listing (administrator only)' })
   reject(
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,
@@ -211,8 +213,8 @@ export class AdminListingsController {
   }
 
   @Patch(':id/verification')
-  @UseGuards(PermissionsGuard)
-  @RequirePermission('listings:approve')
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN')
   @UseInterceptors(
     FileFieldsInterceptor(
       [

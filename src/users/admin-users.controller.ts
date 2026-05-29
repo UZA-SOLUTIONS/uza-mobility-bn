@@ -47,7 +47,7 @@ export class AdminUsersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List all users (super admin)' })
+  @ApiOperation({ summary: 'List all users (administrator)' })
   @ApiOkResponse({ description: 'All users' })
   listAll() {
     return this.usersService.findAll();
