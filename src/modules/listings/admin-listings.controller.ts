@@ -178,6 +178,18 @@ export class AdminListingsController {
     );
   }
 
+  @Patch(':id/unpublish')
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({
+    summary: 'Unpublish live listing (status → SUSPENDED, administrator only)',
+  })
+  unpublish(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.requireAdmin(request, (userId, ctx) =>
+      this.listingsService.adminUnpublish(id, userId, ctx),
+    );
+  }
+
   @Patch(':id/reject')
   @UseGuards(RolesGuard)
   @Roles('SUPER_ADMIN')

@@ -3,7 +3,8 @@ import {
   IntersectionType,
   PartialType,
 } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { ListingStatus } from '@prisma/client';
+import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
 import { CreateListingDto } from './create-listing.dto';
 
 class AdminUpdateListingExtrasDto {
@@ -15,6 +16,15 @@ class AdminUpdateListingExtrasDto {
   @IsArray()
   @IsString({ each: true })
   removePhotoIds?: string[];
+
+  @ApiPropertyOptional({
+    enum: ListingStatus,
+    description:
+      'Manual status change when editing (e.g. DRAFT → PENDING_REVIEW). Approval still uses approve/publish endpoints.',
+  })
+  @IsOptional()
+  @IsEnum(ListingStatus)
+  status?: ListingStatus;
 }
 
 /** Admin may update platform listings they created (multipart payload). */

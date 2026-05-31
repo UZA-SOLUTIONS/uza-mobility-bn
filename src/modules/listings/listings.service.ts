@@ -408,7 +408,12 @@ export class ListingsService {
       );
     }
 
-    const { removePhotoIds, pricing, photoUrls, ...listingFields } = dto;
+    const { removePhotoIds, pricing, photoUrls, status, ...listingFields } =
+      dto;
+
+    if (status !== undefined && status !== listing.status) {
+      this.assertAdminManualStatusChange(listing.status, status);
+    }
 
     const normalizedSubcategoryId =
       listingFields.subcategoryId === ''
@@ -448,6 +453,9 @@ export class ListingsService {
         where: { id: listingId },
         data: {
           ...this.buildListingUpdateData(listingFields),
+          ...(status !== undefined && status !== listing.status
+            ? { status }
+            : {}),
           ...(deliveryDaysFromPricing !== undefined &&
           listingFields.deliveryEstimateDays === undefined
             ? { deliveryEstimateDays: deliveryDaysFromPricing }
@@ -489,6 +497,21 @@ export class ListingsService {
 
     if (!updated) {
       throw new NotFoundException('Listing not found');
+    }
+
+    if (
+      status === ListingStatus.PENDING_REVIEW &&
+      listing.status !== ListingStatus.PENDING_REVIEW
+    ) {
+      await this.notificationsService.sendToRoleNames(['SUPER_ADMIN'], {
+        type: NotificationType.SYSTEM_ALERT,
+        title: 'Listing submitted for review',
+        body: `${updated.listingTitle} is pending administrator approval.`,
+        metadata: {
+          listingId: updated.id,
+          slug: updated.slug,
+        },
+      });
     }
 
     await this.auditService.record({
@@ -888,6 +911,20 @@ export class ListingsService {
     });
 
     return toAdminListing(updated);
+  }
+
+  async adminUnpublish(
+    listingId: string,
+    adminUserId: string,
+    auditContext: RequestAuditContext = {},
+  ) {
+    return this.transitionListing(
+      listingId,
+      ListingStatus.SUSPENDED,
+      adminUserId,
+      'listings:unpublished',
+      auditContext,
+    );
   }
 
   async adminReject(
@@ -1392,6 +1429,30 @@ export class ListingsService {
     }
 
     return listing;
+  }
+
+  private assertAdminManualStatusChange(
+    from: ListingStatus,
+    to: ListingStatus,
+  ): void {
+    if (from === to) {
+      return;
+    }
+
+    if (canTransition(from, to)) {
+      return;
+    }
+
+    if (
+      from === ListingStatus.REJECTED &&
+      to === ListingStatus.PENDING_REVIEW
+    ) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `Cannot change listing status from ${from} to ${to}`,
+    );
   }
 
   private assertAdminOnlyListingType(sellerType: SellerType): void {
