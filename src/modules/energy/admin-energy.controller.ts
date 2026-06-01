@@ -24,7 +24,7 @@ import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import { imageMulterOptions } from '../../common/uploads/multer.config';
 import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
@@ -59,7 +59,7 @@ class FilterEnergyRequestsDto {
 export class AdminEnergyController {
   constructor(
     private readonly energyService: EnergyService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   @Post('products')
@@ -80,8 +80,8 @@ export class AdminEnergyController {
   ) {
     const dto = await parseMultipartPayload(CreateChargingProductDto, payload);
     const photoUrls = photos?.length
-      ? this.cloudinary.urlsFromAssets(
-          await this.cloudinary.uploadImages(photos, UploadFolder.ENERGY),
+      ? this.storage.urlsFromAssets(
+          await this.storage.uploadImages(photos, UploadFolder.ENERGY),
         )
       : undefined;
     return this.energyService.createProduct({ ...dto, photoUrls });
@@ -111,8 +111,8 @@ export class AdminEnergyController {
       ? await parseMultipartPayload(UpdateChargingProductDto, payload)
       : {};
     const photoUrls = photos?.length
-      ? this.cloudinary.urlsFromAssets(
-          await this.cloudinary.uploadImages(photos, UploadFolder.ENERGY),
+      ? this.storage.urlsFromAssets(
+          await this.storage.uploadImages(photos, UploadFolder.ENERGY),
         )
       : undefined;
     return this.energyService.updateProduct(id, { ...dto, photoUrls });

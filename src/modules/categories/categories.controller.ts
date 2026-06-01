@@ -23,7 +23,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { SkipAudit } from '../../common/audit/decorators/skip-audit.decorator';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import { imageMulterOptions } from '../../common/uploads/multer.config';
 import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
@@ -38,7 +38,7 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 export class CategoriesController {
   constructor(
     private readonly categoriesService: CategoriesService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   @Get()
@@ -75,7 +75,7 @@ export class CategoriesController {
   ) {
     const dto = await parseMultipartPayload(CreateCategoryDto, payload);
     const iconUrl = icon
-      ? (await this.cloudinary.uploadImage(icon, UploadFolder.CATEGORIES)).url
+      ? (await this.storage.uploadImage(icon, UploadFolder.CATEGORIES)).url
       : undefined;
     return this.categoriesService.create({
       ...dto,
@@ -105,7 +105,7 @@ export class CategoriesController {
       ? await parseMultipartPayload(UpdateCategoryDto, payload)
       : {};
     const iconUrl = icon
-      ? (await this.cloudinary.uploadImage(icon, UploadFolder.CATEGORIES)).url
+      ? (await this.storage.uploadImage(icon, UploadFolder.CATEGORIES)).url
       : undefined;
     return this.categoriesService.update(id, {
       ...dto,
@@ -142,7 +142,7 @@ export class CategoriesController {
   ) {
     const dto = await parseMultipartPayload(CreateSubcategoryDto, payload);
     const iconUrl = icon
-      ? (await this.cloudinary.uploadImage(icon, UploadFolder.CATEGORIES)).url
+      ? (await this.storage.uploadImage(icon, UploadFolder.CATEGORIES)).url
       : undefined;
     return this.categoriesService.addSubcategory(id, {
       ...dto,

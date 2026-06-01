@@ -20,7 +20,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import { imageMulterOptions } from '../../common/uploads/multer.config';
 import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
@@ -38,7 +38,7 @@ import { CategoriesService } from './categories.service';
 export class AdminCategoriesController {
   constructor(
     private readonly categoriesService: CategoriesService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   @Get()
@@ -69,7 +69,7 @@ export class AdminCategoriesController {
       ? await parseMultipartPayload(UpdateSubcategoryDto, payload)
       : {};
     const iconUrl = icon
-      ? (await this.cloudinary.uploadImage(icon, UploadFolder.CATEGORIES)).url
+      ? (await this.storage.uploadImage(icon, UploadFolder.CATEGORIES)).url
       : undefined;
     return this.categoriesService.updateSubcategory(categoryId, subId, {
       ...dto,
@@ -113,7 +113,7 @@ export class AdminCategoriesController {
       ? await parseMultipartPayload(UpdateCategoryDto, payload)
       : {};
     const iconUrl = icon
-      ? (await this.cloudinary.uploadImage(icon, UploadFolder.CATEGORIES)).url
+      ? (await this.storage.uploadImage(icon, UploadFolder.CATEGORIES)).url
       : undefined;
     return this.categoriesService.update(id, {
       ...dto,

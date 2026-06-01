@@ -35,7 +35,7 @@ import { AdminCreateListingDto } from './dto/admin-create-listing.dto';
 import { AdminUpdateListingDto } from './dto/admin-update-listing.dto';
 import { AdminFilterListingsDto } from './dto/admin-filter-listings.dto';
 import { RejectListingDto } from './dto/reject-listing.dto';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import {
   documentMulterOptions,
   imageMulterOptions,
@@ -54,7 +54,7 @@ export class AdminListingsController {
   constructor(
     private readonly listingsService: ListingsService,
     private readonly verificationService: VerificationService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   @Get()
@@ -91,8 +91,8 @@ export class AdminListingsController {
     return this.requireAdmin(request, async (userId, ctx) => {
       const dto = await parseMultipartPayload(AdminCreateListingDto, payload);
       const photoUrls = photos?.length
-        ? this.cloudinary.urlsFromAssets(
-            await this.cloudinary.uploadImagesOrThrow(
+        ? this.storage.urlsFromAssets(
+            await this.storage.uploadImagesOrThrow(
               photos,
               UploadFolder.LISTINGS,
             ),
@@ -136,8 +136,8 @@ export class AdminListingsController {
     return this.requireAdmin(request, async (userId, ctx) => {
       const dto = await parseMultipartPayload(AdminUpdateListingDto, payload);
       const photoUrls = photos?.length
-        ? this.cloudinary.urlsFromAssets(
-            await this.cloudinary.uploadImagesOrThrow(
+        ? this.storage.urlsFromAssets(
+            await this.storage.uploadImagesOrThrow(
               photos,
               UploadFolder.LISTINGS,
             ),
@@ -258,7 +258,7 @@ export class AdminListingsController {
       const dto = await parseMultipartPayload(UpdateVerificationDto, payload);
       const reportUrl = files?.report?.[0]
         ? (
-            await this.cloudinary.uploadImage(
+            await this.storage.uploadImage(
               files.report[0],
               UploadFolder.VERIFICATION,
               files.report[0].mimetype === 'application/pdf' ? 'raw' : 'image',
@@ -267,7 +267,7 @@ export class AdminListingsController {
         : undefined;
       const batteryReportUrl = files?.batteryReport?.[0]
         ? (
-            await this.cloudinary.uploadImage(
+            await this.storage.uploadImage(
               files.batteryReport[0],
               UploadFolder.VERIFICATION,
               files.batteryReport[0].mimetype === 'application/pdf'

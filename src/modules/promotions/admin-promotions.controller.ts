@@ -26,7 +26,7 @@ import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import { imageMulterOptions } from '../../common/uploads/multer.config';
 import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
@@ -44,7 +44,7 @@ import { PromotionsService } from './promotions.service';
 export class AdminPromotionsController {
   constructor(
     private readonly promotionsService: PromotionsService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   private requireAdmin(
@@ -94,8 +94,7 @@ export class AdminPromotionsController {
     return this.requireAdmin(request, async (adminId, ctx) => {
       const dto = await parseMultipartPayload(CreatePromotionDto, payload);
       const bannerImageUrl = banner
-        ? (await this.cloudinary.uploadImage(banner, UploadFolder.PROMOTIONS))
-            .url
+        ? (await this.storage.uploadImage(banner, UploadFolder.PROMOTIONS)).url
         : undefined;
       return this.promotionsService.create(
         { ...dto, bannerImageUrl },
@@ -128,8 +127,7 @@ export class AdminPromotionsController {
         ? await parseMultipartPayload(UpdatePromotionDto, payload)
         : {};
       const bannerImageUrl = banner
-        ? (await this.cloudinary.uploadImage(banner, UploadFolder.PROMOTIONS))
-            .url
+        ? (await this.storage.uploadImage(banner, UploadFolder.PROMOTIONS)).url
         : undefined;
       return this.promotionsService.update(
         id,

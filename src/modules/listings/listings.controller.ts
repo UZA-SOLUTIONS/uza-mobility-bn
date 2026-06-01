@@ -30,7 +30,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { SkipAudit } from '../../common/audit/decorators/skip-audit.decorator';
 import { getRequestAuditContext } from '../../common/audit/request-context.util';
 import type { AuthenticatedRequest } from '../../users/users.types';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import { imageMulterOptions } from '../../common/uploads/multer.config';
 import { UploadFolder } from '../../common/uploads/upload.constants';
 import { CreateListingDto } from './dto/create-listing.dto';
@@ -44,7 +44,7 @@ import { ListingsService } from './listings.service';
 export class ListingsController {
   constructor(
     private readonly listingsService: ListingsService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   @Get('featured')
@@ -242,7 +242,7 @@ export class ListingsController {
       throw new BadRequestException('At least one photo file is required');
     }
 
-    const assets = await this.cloudinary.uploadImages(
+    const assets = await this.storage.uploadImages(
       files,
       UploadFolder.LISTINGS,
     );

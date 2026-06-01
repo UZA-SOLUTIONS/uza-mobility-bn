@@ -22,7 +22,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import { imageMulterOptions } from '../../common/uploads/multer.config';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
 import { UploadFolder } from '../../common/uploads/upload.constants';
@@ -45,7 +45,7 @@ import { UpdateStationDto } from './dto/update-station.dto';
 export class StationsController {
   constructor(
     private readonly stationsService: ChargingStationsService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   private requireUserId(request: AuthenticatedRequest): string {
@@ -255,8 +255,8 @@ export class StationsController {
     @UploadedFiles() photos?: Express.Multer.File[],
   ) {
     const photoUrls = photos?.length
-      ? this.cloudinary.urlsFromAssets(
-          await this.cloudinary.uploadImages(photos, UploadFolder.GENERAL),
+      ? this.storage.urlsFromAssets(
+          await this.storage.uploadImages(photos, UploadFolder.GENERAL),
         )
       : [];
     return this.stationsService.addPhotosByOwner(

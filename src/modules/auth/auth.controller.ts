@@ -21,7 +21,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SkipAudit } from '../../common/audit/decorators/skip-audit.decorator';
 import { getRequestAuditContext } from '../../common/audit/request-context.util';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import { imageMulterOptions } from '../../common/uploads/multer.config';
 import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
@@ -44,7 +44,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   @Post('register')
@@ -142,8 +142,14 @@ export class AuthController {
       ? await parseMultipartPayload(UpdateUserDto, payload)
       : {};
 
+    let previousPhoto: string | null | undefined;
+    if (photo) {
+      const current = await this.authService.me(request.user.sub);
+      previousPhoto = current.profilePhoto;
+    }
+
     const profilePhoto = photo
-      ? (await this.cloudinary.uploadImage(photo, UploadFolder.PROFILES)).url
+      ? (await this.storage.uploadImage(photo, UploadFolder.PROFILES)).url
       : undefined;
 
     await this.usersService.updateMe(
@@ -154,6 +160,10 @@ export class AuthController {
       },
       getRequestAuditContext(request),
     );
+
+    if (profilePhoto && previousPhoto) {
+      await this.storage.deleteByUrl(previousPhoto);
+    }
 
     return this.authService.me(request.user.sub);
   }

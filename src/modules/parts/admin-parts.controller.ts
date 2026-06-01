@@ -23,7 +23,7 @@ import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import { imageMulterOptions } from '../../common/uploads/multer.config';
 import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
@@ -42,7 +42,7 @@ import { PartsService } from './parts.service';
 export class AdminPartsController {
   constructor(
     private readonly partsService: PartsService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   @Get()
@@ -78,8 +78,8 @@ export class AdminPartsController {
   ) {
     const dto = await parseMultipartPayload(AdminCreatePartDto, payload);
     const photoUrls = photos?.length
-      ? this.cloudinary.urlsFromAssets(
-          await this.cloudinary.uploadImages(photos, UploadFolder.PARTS),
+      ? this.storage.urlsFromAssets(
+          await this.storage.uploadImages(photos, UploadFolder.PARTS),
         )
       : undefined;
     return this.partsService.adminCreate({
@@ -111,8 +111,8 @@ export class AdminPartsController {
       ? await parseMultipartPayload(AdminUpdatePartDto, payload)
       : {};
     const photoUrls = photos?.length
-      ? this.cloudinary.urlsFromAssets(
-          await this.cloudinary.uploadImages(photos, UploadFolder.PARTS),
+      ? this.storage.urlsFromAssets(
+          await this.storage.uploadImages(photos, UploadFolder.PARTS),
         )
       : undefined;
     return this.partsService.adminUpdate(id, {

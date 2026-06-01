@@ -15,7 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { CloudinaryService } from './cloudinary.service';
+import { StorageService } from './storage.service';
 import { imageMulterOptions } from './multer.config';
 import { UploadFolder } from './upload.constants';
 
@@ -23,17 +23,17 @@ import { UploadFolder } from './upload.constants';
 @ApiBearerAuth('JWT-access')
 @Controller('uploads')
 export class UploadsController {
-  constructor(private readonly cloudinary: CloudinaryService) {}
+  constructor(private readonly storage: StorageService) {}
 
   @Post('images')
   @UseInterceptors(FilesInterceptor('files', 20, imageMulterOptions))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload one or more images to Cloudinary' })
+  @ApiOperation({ summary: 'Upload one or more images to local storage' })
   @ApiQuery({
     name: 'folder',
     required: false,
     enum: UploadFolder,
-    description: 'Cloudinary subfolder (default: general)',
+    description: 'Storage subfolder (default: general)',
   })
   @ApiBody({
     schema: {
@@ -62,7 +62,7 @@ export class UploadsController {
         ? folder
         : UploadFolder.GENERAL;
 
-    const assets = await this.cloudinary.uploadImages(files, target);
+    const assets = await this.storage.uploadImages(files, target);
     return { items: assets };
   }
 }

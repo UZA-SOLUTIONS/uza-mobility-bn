@@ -25,7 +25,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import type { AuthenticatedRequest } from '../../users/users.types';
 import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import { imageMulterOptions } from '../../common/uploads/multer.config';
 import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
@@ -41,7 +41,7 @@ import { PartsService } from './parts.service';
 export class PartsController {
   constructor(
     private readonly partsService: PartsService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   @Get()
@@ -112,8 +112,8 @@ export class PartsController {
     }
     const dto = await parseMultipartPayload(CreatePartDto, payload);
     const photoUrls = photos?.length
-      ? this.cloudinary.urlsFromAssets(
-          await this.cloudinary.uploadImages(photos, UploadFolder.PARTS),
+      ? this.storage.urlsFromAssets(
+          await this.storage.uploadImages(photos, UploadFolder.PARTS),
         )
       : undefined;
     return this.partsService.createForSeller(userId, {
@@ -151,8 +151,8 @@ export class PartsController {
       ? await parseMultipartPayload(UpdatePartDto, payload)
       : {};
     const photoUrls = photos?.length
-      ? this.cloudinary.urlsFromAssets(
-          await this.cloudinary.uploadImages(photos, UploadFolder.PARTS),
+      ? this.storage.urlsFromAssets(
+          await this.storage.uploadImages(photos, UploadFolder.PARTS),
         )
       : undefined;
     return this.partsService.updateOwn(userId, id, {

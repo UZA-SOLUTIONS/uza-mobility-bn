@@ -22,7 +22,7 @@ import type { AuthenticatedRequest } from '../../users/users.types';
 import { getRequestAuditContext } from '../../common/audit/request-context.util';
 import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
-import { CloudinaryService } from '../../common/uploads/cloudinary.service';
+import { StorageService } from '../../common/uploads/storage.service';
 import { documentMulterOptions } from '../../common/uploads/multer.config';
 import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
@@ -37,7 +37,7 @@ import { PaymentsService } from './payments.service';
 export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly storage: StorageService,
   ) {}
 
   private requireUserId(request: AuthenticatedRequest): string {
@@ -74,7 +74,7 @@ export class PaymentsController {
           proofs.map(async (file) => {
             const resourceType =
               file.mimetype === 'application/pdf' ? 'raw' : 'image';
-            const asset = await this.cloudinary.uploadImage(
+            const asset = await this.storage.uploadImage(
               file,
               UploadFolder.PAYMENTS,
               resourceType,
