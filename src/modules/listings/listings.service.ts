@@ -90,6 +90,95 @@ export class ListingsService {
     );
   }
 
+  async getBrowseFilterOptions(categorySlug?: string, brand?: string) {
+    const baseFilters: FilterListingsDto = {};
+    if (categorySlug) {
+      baseFilters.category = categorySlug;
+    }
+    const where = this.searchService.buildWhereClause(baseFilters);
+    if (brand) {
+      where.brand = { equals: brand, mode: 'insensitive' };
+    }
+
+    const listings = await this.prisma.listing.findMany({
+      where,
+      select: {
+        brand: true,
+        model: true,
+        condition: true,
+        drivetrain: true,
+        color: true,
+        city: true,
+        country: true,
+        manufacturingYear: true,
+        mileageKm: true,
+        listingPricing: { select: { finalPriceUsd: true } },
+        evSpecs: { select: { batteryCapacityKwh: true } },
+      },
+    });
+
+    const brands = new Set<string>();
+    const models = new Set<string>();
+    const conditions = new Set<string>();
+    const drivetrains = new Set<string>();
+    const colors = new Set<string>();
+    const cities = new Set<string>();
+    const countries = new Set<string>();
+    const batteryCapacities = new Set<number>();
+    let yearMin = Infinity;
+    let yearMax = -Infinity;
+    let mileageMin = Infinity;
+    let mileageMax = -Infinity;
+    let priceMin = Infinity;
+    let priceMax = -Infinity;
+
+    for (const row of listings) {
+      if (row.brand) brands.add(row.brand);
+      if (row.model) models.add(row.model);
+      if (row.condition) conditions.add(row.condition);
+      if (row.drivetrain) drivetrains.add(row.drivetrain);
+      if (row.color) colors.add(row.color);
+      if (row.city) cities.add(row.city);
+      if (row.country) countries.add(row.country);
+      if (row.evSpecs?.batteryCapacityKwh != null) {
+        batteryCapacities.add(row.evSpecs.batteryCapacityKwh);
+      }
+      yearMin = Math.min(yearMin, row.manufacturingYear);
+      yearMax = Math.max(yearMax, row.manufacturingYear);
+      if (row.mileageKm != null) {
+        mileageMin = Math.min(mileageMin, row.mileageKm);
+        mileageMax = Math.max(mileageMax, row.mileageKm);
+      }
+      const price = row.listingPricing?.finalPriceUsd;
+      if (price != null) {
+        priceMin = Math.min(priceMin, price);
+        priceMax = Math.max(priceMax, price);
+      }
+    }
+
+    const sortStrings = (a: string, b: string) => a.localeCompare(b);
+
+    return {
+      brands: [...brands].sort(sortStrings),
+      models: [...models].sort(sortStrings),
+      conditions: [...conditions].sort(),
+      drivetrains: [...drivetrains].sort(),
+      colors: [...colors].sort(sortStrings),
+      cities: [...cities].sort(sortStrings),
+      countries: [...countries].sort(sortStrings),
+      batteryCapacitiesKwh: [...batteryCapacities].sort((a, b) => a - b),
+      yearRange: yearMin === Infinity ? null : { min: yearMin, max: yearMax },
+      mileageRange:
+        mileageMin === Infinity
+          ? null
+          : { min: Math.floor(mileageMin), max: Math.ceil(mileageMax) },
+      priceRange:
+        priceMin === Infinity
+          ? null
+          : { min: Math.floor(priceMin), max: Math.ceil(priceMax) },
+    };
+  }
+
   async browse(filters: FilterListingsDto) {
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 24;

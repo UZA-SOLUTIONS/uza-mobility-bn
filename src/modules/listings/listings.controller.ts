@@ -34,6 +34,7 @@ import { StorageService } from '../../common/uploads/storage.service';
 import { imageMulterOptions } from '../../common/uploads/multer.config';
 import { UploadFolder } from '../../common/uploads/upload.constants';
 import { CreateListingDto } from './dto/create-listing.dto';
+import { BrowseFiltersQueryDto } from './dto/browse-filters-query.dto';
 import { FilterListingsDto } from './dto/filter-listings.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { PreviewListingPricingDto } from './dto/preview-listing-pricing.dto';
@@ -100,6 +101,19 @@ export class ListingsController {
     }
 
     return this.listingsService.findMine(request.user.sub);
+  }
+
+  @Get('browse-filters')
+  @Public()
+  @SkipAudit()
+  @ApiOperation({
+    summary: 'Distinct filter option values for marketplace browse',
+  })
+  browseFilters(@Query() query: BrowseFiltersQueryDto) {
+    return this.listingsService.getBrowseFilterOptions(
+      query.category,
+      query.brand,
+    );
   }
 
   @Get()

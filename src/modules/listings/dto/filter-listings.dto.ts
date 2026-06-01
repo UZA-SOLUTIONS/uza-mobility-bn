@@ -1,6 +1,8 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  BodyType,
   ConditionLevel,
+  DrivetrainType,
   SellerType,
   UseCase,
   VerificationLevel,
@@ -45,6 +47,36 @@ export class FilterListingsDto {
   @IsOptional()
   @IsString()
   subcategory?: string;
+
+  @ApiPropertyOptional({
+    description: 'Comma-separated subcategory slugs (OR filter)',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value == null || value === '') return undefined;
+    const raw = Array.isArray(value) ? value.join(',') : String(value);
+    const slugs = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return slugs.length > 0 ? slugs : undefined;
+  })
+  subcategories?: string[];
+
+  @ApiPropertyOptional({ enum: BodyType })
+  @IsOptional()
+  @IsEnum(BodyType)
+  bodyType?: BodyType;
+
+  @ApiPropertyOptional({ enum: DrivetrainType })
+  @IsOptional()
+  @IsEnum(DrivetrainType)
+  drivetrain?: DrivetrainType;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  color?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -110,7 +142,29 @@ export class FilterListingsDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  mileageMin?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   mileageMax?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum battery capacity (kWh) from listing EV specs',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  batteryCapacityMin?: number;
+
+  @ApiPropertyOptional({
+    description: 'Exact battery capacity (kWh) from listing EV specs',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  batteryCapacityKwh?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

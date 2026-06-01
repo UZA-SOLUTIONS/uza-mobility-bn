@@ -38,8 +38,22 @@ export class SearchService {
       where.category = { slug: filters.category };
     }
 
-    if (filters.subcategory) {
+    if (filters.subcategories?.length) {
+      where.subcategory = { slug: { in: filters.subcategories } };
+    } else if (filters.subcategory) {
       where.subcategory = { slug: filters.subcategory };
+    }
+
+    if (filters.bodyType) {
+      where.bodyType = filters.bodyType;
+    }
+
+    if (filters.drivetrain) {
+      where.drivetrain = filters.drivetrain;
+    }
+
+    if (filters.color) {
+      where.color = { equals: filters.color, mode: 'insensitive' };
     }
 
     if (filters.brand) {
@@ -88,28 +102,38 @@ export class SearchService {
       };
     }
 
-    if (filters.mileageMax !== undefined) {
-      where.mileageKm = { lte: filters.mileageMax };
+    if (filters.mileageMin !== undefined || filters.mileageMax !== undefined) {
+      where.mileageKm = {
+        gte: filters.mileageMin,
+        lte: filters.mileageMax,
+      };
     }
 
-    if (
-      filters.batteryHealthMin !== undefined ||
-      filters.rangeMin !== undefined ||
-      filters.fastCharging !== undefined ||
-      filters.chargingType
-    ) {
-      where.evSpecs = {
-        is: {
-          batteryHealthPercent: filters.batteryHealthMin
-            ? { gte: filters.batteryHealthMin }
-            : undefined,
-          rangeKm: filters.rangeMin ? { gte: filters.rangeMin } : undefined,
-          fastChargingSupported: filters.fastCharging,
-          chargingType: filters.chargingType
-            ? { equals: filters.chargingType, mode: 'insensitive' }
-            : undefined,
-        },
+    const evSpecFilter: Prisma.EvSpecWhereInput = {};
+
+    if (filters.batteryCapacityKwh !== undefined) {
+      evSpecFilter.batteryCapacityKwh = filters.batteryCapacityKwh;
+    } else if (filters.batteryCapacityMin !== undefined) {
+      evSpecFilter.batteryCapacityKwh = { gte: filters.batteryCapacityMin };
+    }
+    if (filters.batteryHealthMin !== undefined) {
+      evSpecFilter.batteryHealthPercent = { gte: filters.batteryHealthMin };
+    }
+    if (filters.rangeMin !== undefined) {
+      evSpecFilter.rangeKm = { gte: filters.rangeMin };
+    }
+    if (filters.fastCharging !== undefined) {
+      evSpecFilter.fastChargingSupported = filters.fastCharging;
+    }
+    if (filters.chargingType) {
+      evSpecFilter.chargingType = {
+        equals: filters.chargingType,
+        mode: 'insensitive',
       };
+    }
+
+    if (Object.keys(evSpecFilter).length > 0) {
+      where.evSpecs = { is: evSpecFilter };
     }
 
     if (filters.verificationLevel) {
