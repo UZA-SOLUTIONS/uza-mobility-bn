@@ -2,16 +2,17 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   NotFoundException,
   Param,
   Patch,
   Post,
   Query,
   Req,
+  Res,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { getRequestAuditContext } from '../../common/audit/request-context.util';
 import type { AuthenticatedRequest } from '../../users/users.types';
@@ -71,11 +72,11 @@ export class AdminInvoicesController {
   @UseGuards(PermissionsGuard)
   @RequirePermission('invoices:read')
   @ApiOperation({ summary: 'Download invoice HTML document (admin)' })
-  @Header('Content-Type', 'text/html; charset=utf-8')
   async document(
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,
-  ): Promise<string> {
+    @Res() res: Response,
+  ): Promise<void> {
     const userId = request.user?.sub;
     if (!userId) {
       throw new UnauthorizedException();
@@ -85,7 +86,7 @@ export class AdminInvoicesController {
     if (!html) {
       throw new NotFoundException('Invoice document not found');
     }
-    return html;
+    res.type('text/html').send(html);
   }
 
   @Patch(':id/cancel')

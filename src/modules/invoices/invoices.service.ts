@@ -25,6 +25,7 @@ import { RequestInvoiceDto } from './dto/request-invoice.dto';
 import {
   ACTIVE_INVOICE_STATUSES,
   INVOICE_VALIDITY_DAYS,
+  PAYABLE_INVOICE_STATUSES,
 } from './invoice.constants';
 import { snapshotPricingFields, toBuyerInvoice } from './invoice.mapper';
 import { InvoicePdfService } from './invoice-pdf.service';
@@ -62,6 +63,12 @@ export class InvoicesService {
 
     if (!user || !user.isActive || user.deletedAt) {
       throw new ForbiddenException('Account is not active');
+    }
+
+    if (!user.buyerProfile) {
+      throw new BadRequestException(
+        'Complete your buyer profile before requesting an invoice',
+      );
     }
 
     if (!listing) {
@@ -184,14 +191,32 @@ export class InvoicesService {
   }
 
   async findMine(userId: string, filters: FilterInvoicesDto) {
-    return this.findPaginated({ userId }, filters);
+    return this.findPaginated(
+      this.buildInvoiceWhere({ userId }, filters),
+      filters,
+    );
   }
 
   async adminFindAll(filters: FilterInvoicesDto) {
-    const where: Prisma.InvoiceWhereInput = {};
+    return this.findPaginated(this.buildInvoiceWhere({}, filters), filters);
+  }
 
-    if (filters.status) {
+  private buildInvoiceWhere(
+    base: Prisma.InvoiceWhereInput,
+    filters: FilterInvoicesDto,
+  ): Prisma.InvoiceWhereInput {
+    const where: Prisma.InvoiceWhereInput = { ...base };
+
+    if (filters.pendingPurchase) {
+      where.status = { in: ACTIVE_INVOICE_STATUSES };
+    } else if (filters.payableOnly) {
+      where.status = { in: PAYABLE_INVOICE_STATUSES };
+    } else if (filters.status) {
       where.status = filters.status;
+    }
+
+    if (filters.listingId) {
+      where.listingId = filters.listingId;
     }
 
     if (filters.q) {
@@ -203,7 +228,7 @@ export class InvoicesService {
       ];
     }
 
-    return this.findPaginated(where, filters);
+    return where;
   }
 
   async findByIdForUser(userId: string, invoiceId: string, isAdmin: boolean) {

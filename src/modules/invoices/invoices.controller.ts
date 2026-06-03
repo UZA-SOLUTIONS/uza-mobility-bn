@@ -2,15 +2,16 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   NotFoundException,
   Param,
   Post,
   Query,
   Req,
+  Res,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
@@ -83,11 +84,11 @@ export class InvoicesController {
   @UseGuards(PermissionsGuard)
   @RequirePermission('invoices:create')
   @ApiOperation({ summary: 'Download invoice HTML document' })
-  @Header('Content-Type', 'text/html; charset=utf-8')
   async document(
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,
-  ): Promise<string> {
+    @Res() res: Response,
+  ): Promise<void> {
     await this.invoicesService.findByIdForUser(
       this.requireUserId(request),
       id,
@@ -99,6 +100,6 @@ export class InvoicesController {
       throw new NotFoundException('Invoice document not found');
     }
 
-    return html;
+    res.type('text/html').send(html);
   }
 }

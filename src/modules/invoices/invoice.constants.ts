@@ -9,4 +9,11 @@ export const ACTIVE_INVOICE_STATUSES: InvoiceStatus[] = [
   InvoiceStatus.PARTIALLY_PAID,
 ];
 
+/** Buyer can still submit or complete payment against these invoices. */
+export const PAYABLE_INVOICE_STATUSES: InvoiceStatus[] = [
+  InvoiceStatus.SENT,
+  InvoiceStatus.AWAITING_PAYMENT,
+  InvoiceStatus.PARTIALLY_PAID,
+];
+
 export const INVOICE_VALIDITY_DAYS = 7;
