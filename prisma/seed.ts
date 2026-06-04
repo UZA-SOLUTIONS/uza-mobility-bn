@@ -3,6 +3,7 @@ import { PrismaClient, SellerType } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { genSaltSync, hashSync } from 'bcryptjs';
 import { seedCategories } from './seed-categories';
+import { seedListings } from './seed-listings';
 import { seedPricingRules } from './seed-pricing-rules';
 
 const prisma = new PrismaClient({
@@ -363,6 +364,7 @@ async function main() {
 
   await seedCategories(prisma);
   await seedPricingRules(prisma);
+  await seedListings(prisma);
 
   console.log('✅ Prisma seed completed');
 }

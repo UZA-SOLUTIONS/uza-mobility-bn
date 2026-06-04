@@ -1,4 +1,5 @@
 import { Listing, ListingPricing, ListingStatus, Prisma } from '@prisma/client';
+import { toAbsoluteUploadUrl } from '../../common/uploads/storage.paths';
 import type { PromotionPriceDisplay } from '../promotions/promotion-display.util';
 
 type ListingWithRelations = Prisma.ListingGetPayload<{
@@ -59,6 +60,10 @@ export function toPublicListing<T extends ListingWithRelations>(
 
   return {
     ...rest,
+    photos: listing.photos.map((photo) => ({
+      ...photo,
+      url: toAbsoluteUploadUrl(photo.url),
+    })),
     listingPricing: toPublicPricing(listingPricing),
     displayBadge: getPublicDisplayBadge(rest.status),
     ...(promotionDisplay ? { promotionDisplay } : {}),

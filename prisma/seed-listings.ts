@@ -1,0 +1,259 @@
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
+import { join } from 'path';
+import {
+  ListingStatus,
+  PrismaClient,
+  SellerType,
+} from '@prisma/client';
+import {
+  publicUploadUrlForPath,
+  resolveUploadRoot,
+} from '../src/common/uploads/storage.paths';
+import { UploadFolder } from '../src/common/uploads/upload.constants';
+import { listingSeedVehicles } from './listings.seed-data';
+
+const ADMIN_EMAIL = 'admin@uza.local';
+const DOCS_IMAGES_DIR = join(process.cwd(), 'docs', 'images');
+const EXCHANGE_RATE_RWF = 1300;
+
+function copySeedImagesToUploads(): Map<string, string> {
+  const uploadDir = join(
+    resolveUploadRoot(process.env.UPLOAD_ROOT),
+    UploadFolder.LISTINGS,
+  );
+  mkdirSync(uploadDir, { recursive: true });
+
+  const urlByFile = new Map<string, string>();
+
+  if (!existsSync(DOCS_IMAGES_DIR)) {
+    console.warn(
+      `⚠️  Skipping listing photos: missing folder ${DOCS_IMAGES_DIR}`,
+    );
+    return urlByFile;
+  }
+
+  const files = readdirSync(DOCS_IMAGES_DIR).filter((name) =>
+    /\.(jpe?g|png|webp)$/i.test(name),
+  );
+
+  for (const file of files) {
+    const source = join(DOCS_IMAGES_DIR, file);
+    const dest = join(uploadDir, file);
+    copyFileSync(source, dest);
+    urlByFile.set(
+      file,
+      publicUploadUrlForPath(`${UploadFolder.LISTINGS}/${file}`),
+    );
+  }
+
+  return urlByFile;
+}
+
+async function resolveSubcategoryId(
+  prisma: PrismaClient,
+  categorySlug: string,
+  subcategoryName: string,
+): Promise<string> {
+  const category = await prisma.category.findUnique({
+    where: { slug: categorySlug },
+    select: { id: true },
+  });
+
+  if (!category) {
+    throw new Error(
+      `Category "${categorySlug}" not found — run category seed first`,
+    );
+  }
+
+  const subcategory = await prisma.subcategory.findFirst({
+    where: { categoryId: category.id, name: subcategoryName },
+    select: { id: true },
+  });
+
+  if (!subcategory) {
+    throw new Error(
+      `Subcategory "${subcategoryName}" under "${categorySlug}" not found`,
+    );
+  }
+
+  return subcategory.id;
+}
+
+function rwandaStockPricing(basePriceUsd: number, discountUsd = 0) {
+  const finalPriceUsd = basePriceUsd - discountUsd;
+  return {
+    basePriceUsd,
+    discountUsd,
+    finalPriceUsd,
+    finalPriceRwf: finalPriceUsd * EXCHANGE_RATE_RWF,
+    currency: 'USD',
+  };
+}
+
+export async function seedListings(prisma: PrismaClient) {
+  const adminUser = await prisma.user.findUnique({
+    where: { email: ADMIN_EMAIL },
+    select: { id: true },
+  });
+
+  if (!adminUser) {
+    throw new Error(
+      `Admin user ${ADMIN_EMAIL} not found — run main seed before listing seed`,
+    );
+  }
+
+  const seller = await prisma.seller.findUnique({
+    where: {
+      userId_sellerType: {
+        userId: adminUser.id,
+        sellerType: SellerType.UZA_RWANDA_STOCK,
+      },
+    },
+    select: { id: true },
+  });
+
+  if (!seller) {
+    throw new Error(
+      'UZA Rwanda Stock seller profile for admin not found — run main seed first',
+    );
+  }
+
+  const photoUrlsByFile = copySeedImagesToUploads();
+  const publishedAt = new Date();
+
+  for (const vehicle of listingSeedVehicles) {
+    const subcategoryId = await resolveSubcategoryId(
+      prisma,
+      vehicle.categorySlug,
+      vehicle.subcategoryName,
+    );
+
+    const category = await prisma.category.findUniqueOrThrow({
+      where: { slug: vehicle.categorySlug },
+      select: { id: true },
+    });
+
+    const photoUrls = vehicle.imageFiles.map((file) => {
+      const url = photoUrlsByFile.get(file);
+      if (!url) {
+        throw new Error(
+          `Missing seed image "${file}" in docs/images (or copy failed)`,
+        );
+      }
+      return url;
+    });
+
+    const pricing = rwandaStockPricing(
+      vehicle.basePriceUsd,
+      vehicle.discountUsd ?? 0,
+    );
+
+    const existing = await prisma.listing.findUnique({
+      where: { slug: vehicle.slug },
+      select: { id: true },
+    });
+
+    const listingData = {
+      sellerId: seller.id,
+      createdByUserId: adminUser.id,
+      categoryId: category.id,
+      subcategoryId,
+      listingTitle: vehicle.listingTitle,
+      status: ListingStatus.PUBLISHED,
+      sellerType: SellerType.UZA_RWANDA_STOCK,
+      brand: vehicle.brand,
+      model: vehicle.model,
+      trim: vehicle.trim ?? null,
+      manufacturingYear: vehicle.manufacturingYear,
+      isNew: vehicle.isNew,
+      condition: vehicle.condition,
+      bodyType: vehicle.bodyType,
+      powertrainType: vehicle.powertrainType,
+      color: vehicle.color,
+      seats: vehicle.seats,
+      steeringPosition: vehicle.steeringPosition,
+      drivetrain: vehicle.drivetrain,
+      mileageKm: vehicle.mileageKm ?? null,
+      hasWarranty: vehicle.hasWarranty,
+      warrantyDetails: vehicle.warrantyDetails,
+      hasAccidentHistory: vehicle.hasAccidentHistory,
+      ownershipCount: vehicle.ownershipCount,
+      registrationStatus: vehicle.registrationStatus,
+      vehicleLocation: vehicle.vehicleLocation,
+      city: vehicle.city,
+      country: vehicle.country,
+      availabilityStatus: 'AVAILABLE',
+      deliveryEstimateDays: vehicle.deliveryEstimateDays,
+      description: vehicle.description,
+      verificationLevel: vehicle.verificationLevel,
+      isFeatured: vehicle.isFeatured,
+      isHotDeal: vehicle.isHotDeal,
+      publishedAt,
+    };
+
+    if (existing) {
+      await prisma.listingPhoto.deleteMany({
+        where: { listingId: existing.id },
+      });
+      await prisma.listingUseCase.deleteMany({
+        where: { listingId: existing.id },
+      });
+
+      await prisma.listing.update({
+        where: { id: existing.id },
+        data: {
+          ...listingData,
+          photos: {
+            create: photoUrls.map((url, index) => ({
+              url,
+              isPrimary: index === 0,
+              displayOrder: index,
+              altText: `${vehicle.brand} ${vehicle.model} photo ${index + 1}`,
+            })),
+          },
+          evSpecs: {
+            upsert: {
+              create: vehicle.evSpecs,
+              update: vehicle.evSpecs,
+            },
+          },
+          listingPricing: {
+            upsert: {
+              create: pricing,
+              update: pricing,
+            },
+          },
+          useCaseTags: {
+            create: vehicle.useCases.map((useCase) => ({ useCase })),
+          },
+        },
+      });
+    } else {
+      await prisma.listing.create({
+        data: {
+          slug: vehicle.slug,
+          ...listingData,
+          photos: {
+            create: photoUrls.map((url, index) => ({
+              url,
+              isPrimary: index === 0,
+              displayOrder: index,
+              altText: `${vehicle.brand} ${vehicle.model} photo ${index + 1}`,
+            })),
+          },
+          evSpecs: { create: vehicle.evSpecs },
+          listingPricing: { create: pricing },
+          useCaseTags: {
+            create: vehicle.useCases.map((useCase) => ({ useCase })),
+          },
+        },
+      });
+    }
+
+    console.log(`  • ${vehicle.listingTitle} (${vehicle.slug})`);
+  }
+
+  console.log(
+    `✅ Seeded ${listingSeedVehicles.length} published listings for UZA Rwanda Stock`,
+  );
+}
