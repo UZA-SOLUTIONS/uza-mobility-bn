@@ -2,34 +2,39 @@ import {
   BadRequestException,
   HttpException,
   Injectable,
+  NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { mkdir, unlink, writeFile } from 'fs/promises';
-import { dirname, join } from 'path';
+import type { Response } from 'express';
 import { randomUUID } from 'crypto';
+import { MongoService } from '../../mongo/mongo.service';
 import { UploadFolder } from './upload.constants';
-import { resolveUploadRoot, UPLOAD_URL_PREFIX } from './storage.paths';
+import {
+  gridFsDeleteByFilename,
+  gridFsFindByFilename,
+  gridFsOpenDownloadStream,
+  gridFsUploadBuffer,
+  normalizePublicId,
+} from './gridfs.util';
+import { UPLOAD_URL_PREFIX } from './storage.paths';
 import type { UploadedAsset } from './storage.types';
 
 @Injectable()
 export class StorageService implements OnModuleInit {
-  private uploadRoot = '';
   private publicBaseUrl = '';
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly mongo: MongoService,
+  ) {}
 
   onModuleInit() {
-    this.uploadRoot = resolveUploadRoot(this.config.get<string>('UPLOAD_ROOT'));
     const port = this.config.get<number>('PORT', 7000);
     const configuredBase = this.config.get<string>('PUBLIC_UPLOAD_BASE_URL');
     this.publicBaseUrl = (
       configuredBase?.trim() || `http://localhost:${port}${UPLOAD_URL_PREFIX}`
     ).replace(/\/$/, '');
-  }
-
-  getUploadRoot(): string {
-    return this.uploadRoot;
   }
 
   getPublicBaseUrl(): string {
@@ -47,15 +52,18 @@ export class StorageService implements OnModuleInit {
 
     const extension = this.extensionForFile(file, resourceType);
     const publicId = `${folder}/${randomUUID()}${extension}`;
-    const absolutePath = join(this.uploadRoot, publicId);
+    const bucket = this.mongo.getUploadsBucket();
 
-    await mkdir(dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, file.buffer);
+    const { bytes } = await gridFsUploadBuffer(bucket, publicId, file.buffer, {
+      contentType: file.mimetype,
+      folder,
+      originalName: file.originalname,
+    });
 
     return {
       url: this.toPublicUrl(publicId),
       publicId,
-      bytes: file.buffer.length,
+      bytes,
       format: extension.replace(/^\./, '') || undefined,
     };
   }
@@ -105,7 +113,34 @@ export class StorageService implements OnModuleInit {
     return assets.map((asset) => asset.url);
   }
 
-  /** Deletes a previously uploaded file when the URL points at this server. */
+  async streamPublicFile(publicId: string, res: Response): Promise<void> {
+    const key = normalizePublicId(publicId);
+    if (!key || key.includes('..')) {
+      throw new NotFoundException('File not found');
+    }
+
+    const bucket = this.mongo.getUploadsBucket();
+    const file = await gridFsFindByFilename(bucket, key);
+    if (!file) {
+      throw new NotFoundException('File not found');
+    }
+
+    const metadata = file.metadata as { contentType?: string } | undefined;
+    res.setHeader(
+      'Content-Type',
+      metadata?.contentType ?? 'application/octet-stream',
+    );
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+
+    const stream = gridFsOpenDownloadStream(bucket, file);
+    await new Promise<void>((resolve, reject) => {
+      stream.on('error', reject);
+      res.on('error', reject);
+      res.on('finish', resolve);
+      stream.pipe(res);
+    });
+  }
+
   async deleteByUrl(url: string | null | undefined): Promise<void> {
     const publicId = this.publicIdFromUrl(url);
     if (!publicId) return;
@@ -117,12 +152,10 @@ export class StorageService implements OnModuleInit {
       return;
     }
 
-    const absolutePath = join(this.uploadRoot, publicId);
-    try {
-      await unlink(absolutePath);
-    } catch {
-      // File may already be gone.
-    }
+    await gridFsDeleteByFilename(
+      this.mongo.getUploadsBucket(),
+      normalizePublicId(publicId),
+    );
   }
 
   publicIdFromUrl(url: string | null | undefined): string | null {

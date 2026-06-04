@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import {
   ListingStatus,
@@ -6,9 +6,11 @@ import {
   SellerType,
 } from '@prisma/client';
 import {
-  publicUploadUrlForPath,
-  resolveUploadRoot,
-} from '../src/common/uploads/storage.paths';
+  connectGridFsForSeed,
+  mimeTypeForFilename,
+  seedGridFsFileFromPath,
+} from '../src/common/uploads/gridfs-seed.util';
+import { publicUploadUrlForPath } from '../src/common/uploads/storage.paths';
 import { UploadFolder } from '../src/common/uploads/upload.constants';
 import { listingSeedVehicles } from './listings.seed-data';
 
@@ -16,12 +18,11 @@ const ADMIN_EMAIL = 'admin@uza.local';
 const DOCS_IMAGES_DIR = join(process.cwd(), 'docs', 'images');
 const EXCHANGE_RATE_RWF = 1300;
 
-function copySeedImagesToUploads(): Map<string, string> {
-  const uploadDir = join(
-    resolveUploadRoot(process.env.UPLOAD_ROOT),
-    UploadFolder.LISTINGS,
-  );
-  mkdirSync(uploadDir, { recursive: true });
+async function uploadSeedImagesToGridFs(): Promise<Map<string, string>> {
+  const uri = process.env.MONGODB_URI?.trim();
+  if (!uri) {
+    throw new Error('MONGODB_URI is required to seed listing photos into GridFS');
+  }
 
   const urlByFile = new Map<string, string>();
 
@@ -32,18 +33,29 @@ function copySeedImagesToUploads(): Map<string, string> {
     return urlByFile;
   }
 
-  const files = readdirSync(DOCS_IMAGES_DIR).filter((name) =>
-    /\.(jpe?g|png|webp)$/i.test(name),
-  );
+  const { client, bucket } = await connectGridFsForSeed(uri, {
+    dbName: process.env.MONGODB_DB_NAME,
+    bucketName: process.env.GRIDFS_BUCKET_NAME,
+  });
 
-  for (const file of files) {
-    const source = join(DOCS_IMAGES_DIR, file);
-    const dest = join(uploadDir, file);
-    copyFileSync(source, dest);
-    urlByFile.set(
-      file,
-      publicUploadUrlForPath(`${UploadFolder.LISTINGS}/${file}`),
+  try {
+    const files = readdirSync(DOCS_IMAGES_DIR).filter((name) =>
+      /\.(jpe?g|png|webp)$/i.test(name),
     );
+
+    for (const file of files) {
+      const source = join(DOCS_IMAGES_DIR, file);
+      const publicId = `${UploadFolder.LISTINGS}/${file}`;
+      await seedGridFsFileFromPath(
+        bucket,
+        source,
+        publicId,
+        mimeTypeForFilename(file),
+      );
+      urlByFile.set(file, publicUploadUrlForPath(publicId));
+    }
+  } finally {
+    await client.close();
   }
 
   return urlByFile;
@@ -118,7 +130,7 @@ export async function seedListings(prisma: PrismaClient) {
     );
   }
 
-  const photoUrlsByFile = copySeedImagesToUploads();
+  const photoUrlsByFile = await uploadSeedImagesToGridFs();
   const publishedAt = new Date();
 
   for (const vehicle of listingSeedVehicles) {

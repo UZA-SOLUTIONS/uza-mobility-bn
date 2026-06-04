@@ -1,12 +1,15 @@
 import { join, resolve } from 'path';
 
-/** Absolute filesystem directory for uploaded assets. */
+/**
+ * Legacy local path helper (folder layout only — binaries live in GridFS).
+ * @deprecated Files are stored in MongoDB; see storage/uploads/.gitkeep folders for layout.
+ */
 export function resolveUploadRoot(uploadRoot?: string): string {
   const configured = uploadRoot?.trim() || 'storage/uploads';
   return resolve(process.cwd(), configured);
 }
 
-/** URL path prefix served by Express static middleware. */
+/** URL path prefix for public file routes (GET /uploads/... streams from GridFS). */
 export const UPLOAD_URL_PREFIX = '/uploads';
 
 export function joinUploadRoot(

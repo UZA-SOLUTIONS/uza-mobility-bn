@@ -3,12 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { mkdirSync } from 'fs';
 import { AppModule } from './app.module';
-import {
-  resolveUploadRoot,
-  UPLOAD_URL_PREFIX,
-} from './common/uploads/storage.paths';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -16,11 +11,6 @@ async function bootstrap() {
   app.enableCors();
 
   const configService = app.get(ConfigService);
-  const uploadRoot = resolveUploadRoot(
-    configService.get<string>('UPLOAD_ROOT'),
-  );
-  mkdirSync(uploadRoot, { recursive: true });
-  app.useStaticAssets(uploadRoot, { prefix: UPLOAD_URL_PREFIX });
 
   app.useGlobalPipes(
     new ValidationPipe({

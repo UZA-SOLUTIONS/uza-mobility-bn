@@ -29,12 +29,14 @@ import { ChargingStationsModule } from './modules/charging-stations/charging-sta
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { UploadsModule } from './common/uploads/uploads.module';
+import { MongoModule } from './mongo/mongo.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    MongoModule,
     UploadsModule,
     ScheduleModule.forRoot(),
     PrismaModule,
