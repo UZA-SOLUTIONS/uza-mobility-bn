@@ -4,7 +4,13 @@ import {
   PartialType,
 } from '@nestjs/swagger';
 import { ListingStatus } from '@prisma/client';
-import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { CreateListingDto } from './create-listing.dto';
 
 class AdminUpdateListingExtrasDto {
@@ -16,6 +22,11 @@ class AdminUpdateListingExtrasDto {
   @IsArray()
   @IsString({ each: true })
   removePhotoIds?: string[];
+
+  @ApiPropertyOptional({ description: 'Remove the listing hero video' })
+  @IsOptional()
+  @IsBoolean()
+  removeVideo?: boolean;
 
   @ApiPropertyOptional({
     enum: ListingStatus,

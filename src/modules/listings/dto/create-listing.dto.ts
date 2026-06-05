@@ -130,6 +130,11 @@ export class CreateListingDto {
   @Min(0)
   ownershipCount?: number;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  registrationStatus?: string;
+
   @ApiProperty()
   @IsString()
   @Length(1, 255)

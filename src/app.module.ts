@@ -25,6 +25,8 @@ import { SellersModule } from './modules/sellers/sellers.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { SustainabilityModule } from './modules/sustainability/sustainability.module';
 import { FinancingModule } from './modules/financing/financing.module';
+import { BookingsModule } from './modules/bookings/bookings.module';
+import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { ChargingStationsModule } from './modules/charging-stations/charging-stations.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
@@ -58,6 +60,8 @@ import { MongoModule } from './mongo/mongo.module';
     PromotionsModule,
     SustainabilityModule,
     FinancingModule,
+    BookingsModule,
+    PlatformSettingsModule,
     ChargingStationsModule,
   ],
   controllers: [AppController],

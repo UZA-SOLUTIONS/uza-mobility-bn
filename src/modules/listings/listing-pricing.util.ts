@@ -91,7 +91,6 @@ export function breakdownToListingPricingCreate(
     commissionUsd: breakdown.commissionUsd,
     discountUsd: breakdown.discountUsd,
     finalPriceUsd: breakdown.finalPriceUsd,
-    finalPriceRwf: breakdown.finalPriceRwf,
     currency: breakdown.currency,
   };
 }

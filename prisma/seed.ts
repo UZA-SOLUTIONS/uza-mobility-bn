@@ -4,6 +4,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { genSaltSync, hashSync } from 'bcryptjs';
 import { seedCategories } from './seed-categories';
 import { seedListings } from './seed-listings';
+import { seedPlatformSettings } from './seed-platform-settings';
 import { seedPricingRules } from './seed-pricing-rules';
 
 const prisma = new PrismaClient({
@@ -105,6 +106,12 @@ async function seedPermissionsAndRoleMappings() {
     'payments:verify',
     'payments:reject',
     'payments:refund',
+    'bookings:create',
+    'bookings:read',
+    'bookings:manage',
+    'bookings:verify',
+    'bookings:reject',
+    'platform-settings:manage',
     'orders:read',
     'orders:update-status',
     'sellers:verify',
@@ -158,6 +165,10 @@ async function seedPermissionsAndRoleMappings() {
       'payments:verify',
       'payments:reject',
       'payments:refund',
+      'bookings:manage',
+      'bookings:verify',
+      'bookings:reject',
+      'platform-settings:manage',
       'financing:read',
       'financing:send-to-bank',
     ],
@@ -177,6 +188,8 @@ async function seedPermissionsAndRoleMappings() {
       'listings:read',
       'invoices:create',
       'payments:submit',
+      'bookings:create',
+      'bookings:read',
       'orders:read',
       'financing:submit',
     ],
@@ -364,6 +377,7 @@ async function main() {
 
   await seedCategories(prisma);
   await seedPricingRules(prisma);
+  await seedPlatformSettings(prisma);
   await seedListings(prisma);
 
   console.log('✅ Prisma seed completed');

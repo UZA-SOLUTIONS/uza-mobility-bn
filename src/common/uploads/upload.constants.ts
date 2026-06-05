@@ -1,4 +1,5 @@
 export const UPLOAD_MAX_FILE_BYTES = 5 * 1024 * 1024;
+export const UPLOAD_MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 
 export const UPLOAD_IMAGE_MIME_TYPES = [
   'image/jpeg',
@@ -14,6 +15,12 @@ export const UPLOAD_IMAGE_MIME_TYPES = [
 export const UPLOAD_DOCUMENT_MIME_TYPES = [
   ...UPLOAD_IMAGE_MIME_TYPES,
   'application/pdf',
+] as const;
+
+export const UPLOAD_VIDEO_MIME_TYPES = [
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
 ] as const;
 
 export enum UploadFolder {

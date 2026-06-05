@@ -4,6 +4,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -49,6 +50,24 @@ export class InvoicesController {
     return this.invoicesService.requestInvoice(
       this.requireUserId(request),
       dto,
+      {
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'],
+        actorEmail: request.user?.email,
+      },
+    );
+  }
+
+  @Patch(':id/cancel')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('invoices:create')
+  @ApiOperation({
+    summary: 'Cancel my reservation before payment proof is submitted',
+  })
+  cancelMine(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.invoicesService.cancelInvoiceByBuyer(
+      this.requireUserId(request),
+      id,
       {
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'],

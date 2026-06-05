@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { AuthModule } from '../auth/auth.module';
+import { UploadsModule } from '../../common/uploads/uploads.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { PromotionsModule } from '../promotions/promotions.module';
 import { SellersModule } from '../sellers/sellers.module';
@@ -9,10 +9,12 @@ import { ListingsController } from './listings.controller';
 import { ListingsService } from './listings.service';
 import { SearchService } from './search.service';
 import { VerificationService } from './verification.service';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     AuthModule,
+    UploadsModule,
     UsersModule,
     SellersModule,
     PricingModule,

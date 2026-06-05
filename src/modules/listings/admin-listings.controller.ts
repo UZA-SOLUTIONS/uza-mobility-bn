@@ -21,10 +21,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import {
-  FileFieldsInterceptor,
-  FilesInterceptor,
-} from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -38,7 +35,7 @@ import { RejectListingDto } from './dto/reject-listing.dto';
 import { StorageService } from '../../common/uploads/storage.service';
 import {
   documentMulterOptions,
-  imageMulterOptions,
+  listingMediaMulterOptions,
 } from '../../common/uploads/multer.config';
 import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
@@ -69,7 +66,15 @@ export class AdminListingsController {
   @UseGuards(RolesGuard, PermissionsGuard)
   @Roles('MARKETPLACE_ADMIN', 'SUPER_ADMIN')
   @RequirePermission('listings:create')
-  @UseInterceptors(FilesInterceptor('photos', 20, imageMulterOptions))
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'photos', maxCount: 20 },
+        { name: 'video', maxCount: 1 },
+      ],
+      listingMediaMulterOptions,
+    ),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: multipartPayloadSchema({
@@ -77,6 +82,7 @@ export class AdminListingsController {
         type: 'array',
         items: { type: 'string', format: 'binary' },
       },
+      video: { type: 'string', format: 'binary' },
     }),
   })
   @ApiOperation({
@@ -86,17 +92,30 @@ export class AdminListingsController {
   create(
     @Req() request: AuthenticatedRequest,
     @Body('payload') payload: string,
-    @UploadedFiles() photos?: Express.Multer.File[],
+    @UploadedFiles()
+    files?: {
+      photos?: Express.Multer.File[];
+      video?: Express.Multer.File[];
+    },
   ) {
     return this.requireAdmin(request, async (userId, ctx) => {
       const dto = await parseMultipartPayload(AdminCreateListingDto, payload);
-      const photoUrls = photos?.length
+      const photoUrls = files?.photos?.length
         ? this.storage.urlsFromAssets(
             await this.storage.uploadImagesOrThrow(
-              photos,
+              files.photos,
               UploadFolder.LISTINGS,
             ),
           )
+        : undefined;
+      const videoUrl = files?.video?.[0]
+        ? (
+            await this.storage.uploadImage(
+              files.video[0],
+              UploadFolder.LISTINGS,
+              'raw',
+            )
+          ).url
         : undefined;
 
       return this.listingsService.createByAdmin(
@@ -104,6 +123,7 @@ export class AdminListingsController {
         {
           ...dto,
           ...(photoUrls ? { photoUrls } : {}),
+          ...(videoUrl ? { videoUrl } : {}),
         },
         ctx,
       );
@@ -114,7 +134,15 @@ export class AdminListingsController {
   @UseGuards(RolesGuard, PermissionsGuard)
   @Roles('MARKETPLACE_ADMIN', 'SUPER_ADMIN')
   @RequirePermission('listings:create')
-  @UseInterceptors(FilesInterceptor('photos', 20, imageMulterOptions))
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'photos', maxCount: 20 },
+        { name: 'video', maxCount: 1 },
+      ],
+      listingMediaMulterOptions,
+    ),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: multipartPayloadSchema({
@@ -122,6 +150,7 @@ export class AdminListingsController {
         type: 'array',
         items: { type: 'string', format: 'binary' },
       },
+      video: { type: 'string', format: 'binary' },
     }),
   })
   @ApiOperation({
@@ -131,17 +160,30 @@ export class AdminListingsController {
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,
     @Body('payload') payload: string,
-    @UploadedFiles() photos?: Express.Multer.File[],
+    @UploadedFiles()
+    files?: {
+      photos?: Express.Multer.File[];
+      video?: Express.Multer.File[];
+    },
   ) {
     return this.requireAdmin(request, async (userId, ctx) => {
       const dto = await parseMultipartPayload(AdminUpdateListingDto, payload);
-      const photoUrls = photos?.length
+      const photoUrls = files?.photos?.length
         ? this.storage.urlsFromAssets(
             await this.storage.uploadImagesOrThrow(
-              photos,
+              files.photos,
               UploadFolder.LISTINGS,
             ),
           )
+        : undefined;
+      const videoUrl = files?.video?.[0]
+        ? (
+            await this.storage.uploadImage(
+              files.video[0],
+              UploadFolder.LISTINGS,
+              'raw',
+            )
+          ).url
         : undefined;
 
       return this.listingsService.updateCreatedByAdmin(
@@ -150,6 +192,7 @@ export class AdminListingsController {
         {
           ...dto,
           ...(photoUrls ? { photoUrls } : {}),
+          ...(videoUrl ? { videoUrl } : {}),
         },
         ctx,
       );

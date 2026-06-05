@@ -5,10 +5,7 @@ export function toBuyerInvoice<T extends Invoice>(invoice: T) {
   return invoice;
 }
 
-export function snapshotPricingFields(
-  pricing: ListingPricing | null,
-  options?: { totalAmountRwf?: number },
-) {
+export function snapshotPricingFields(pricing: ListingPricing | null) {
   if (!pricing) {
     throw new Error('Listing pricing is required for invoice snapshot');
   }
@@ -27,7 +24,6 @@ export function snapshotPricingFields(
     marginUsd: pricing.marginUsd,
     discountUsd: pricing.discountUsd,
     totalAmountUsd,
-    totalAmountRwf: options?.totalAmountRwf ?? pricing.finalPriceRwf,
     currency: pricing.currency ?? 'USD',
   };
 }

@@ -22,7 +22,6 @@ export interface PriceBreakdown {
   commissionUsd?: number;
   discountUsd?: number;
   finalPriceUsd: number;
-  finalPriceRwf?: number;
   deliveryDaysMin: number;
   deliveryDaysMax: number;
   currency: string;

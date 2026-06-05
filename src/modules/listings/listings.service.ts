@@ -10,7 +10,8 @@ import {
   Prisma,
   SellerType,
 } from '@prisma/client';
-import { AuditService } from '../../common/audit/audit.service';
+import { UploadsModule } from '../../common/uploads/uploads.module';
+import { StorageService } from '../../common/uploads/storage.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { resolveUniqueSlug } from '../../common/utils/slug.util';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -57,6 +58,7 @@ import {
   mergeListingEvSpecInput,
 } from './listing-ev-spec.util';
 import type { PreviewListingPricingDto } from './dto/preview-listing-pricing.dto';
+import { AuditService } from 'src/common/audit/audit.service';
 
 type ListingSellerNotifyTarget = {
   listingTitle: string;
@@ -75,6 +77,7 @@ export class ListingsService {
     private readonly usersService: UsersService,
     private readonly pricingService: PricingService,
     private readonly promotionsService: PromotionsService,
+    private readonly storage: StorageService,
   ) {}
 
   private async mapPublicListings<
@@ -497,8 +500,14 @@ export class ListingsService {
       );
     }
 
-    const { removePhotoIds, pricing, photoUrls, status, ...listingFields } =
-      dto;
+    const {
+      removePhotoIds,
+      removeVideo,
+      pricing,
+      photoUrls,
+      status,
+      ...listingFields
+    } = dto;
 
     if (status !== undefined && status !== listing.status) {
       this.assertAdminManualStatusChange(listing.status, status);
@@ -514,6 +523,31 @@ export class ListingsService {
         listingFields.categoryId ?? listing.categoryId,
         normalizedSubcategoryId ?? listing.subcategoryId ?? undefined,
       );
+    }
+
+    const existingEvSpecs = await this.prisma.evSpec.findUnique({
+      where: { listingId },
+    });
+
+    if (listingFields.evSpecs || listingFields.condition) {
+      assertListingEvSpecs({
+        condition: listingFields.condition ?? listing.condition,
+        evSpecs: mergeListingEvSpecInput(
+          listingFields.evSpecs,
+          existingEvSpecs,
+        ),
+      });
+    }
+
+    if (removeVideo && listing.videoUrl) {
+      await this.storage.deleteByUrl(listing.videoUrl);
+      listingFields.videoUrl = undefined;
+    } else if (
+      listingFields.videoUrl &&
+      listing.videoUrl &&
+      listingFields.videoUrl !== listing.videoUrl
+    ) {
+      await this.storage.deleteByUrl(listing.videoUrl);
     }
 
     const sellerType = listing.sellerType;
@@ -566,6 +600,24 @@ export class ListingsService {
 
       if (photoUrls?.length) {
         await this.appendAdminListingPhotos(tx, listingId, photoUrls);
+      }
+
+      if (listingFields.evSpecs) {
+        await tx.evSpec.upsert({
+          where: { listingId },
+          create: { listingId, ...listingFields.evSpecs },
+          update: { ...listingFields.evSpecs },
+        });
+      }
+
+      if (listingFields.useCases) {
+        await tx.listingUseCase.deleteMany({ where: { listingId } });
+        await tx.listingUseCase.createMany({
+          data: listingFields.useCases.map((useCase) => ({
+            listingId,
+            useCase,
+          })),
+        });
       }
 
       const photoCount = await tx.listingPhoto.count({
@@ -1273,6 +1325,7 @@ export class ListingsService {
       warrantyDetails: dto.warrantyDetails,
       hasAccidentHistory: dto.hasAccidentHistory ?? false,
       ownershipCount: dto.ownershipCount,
+      registrationStatus: dto.registrationStatus,
       vehicleLocation: dto.vehicleLocation,
       city: dto.city,
       country: dto.country,
@@ -1314,6 +1367,7 @@ export class ListingsService {
       warrantyDetails: dto.warrantyDetails,
       hasAccidentHistory: dto.hasAccidentHistory,
       ownershipCount: dto.ownershipCount,
+      registrationStatus: dto.registrationStatus,
       vehicleLocation: dto.vehicleLocation,
       city: dto.city,
       country: dto.country,

@@ -79,6 +79,7 @@ model User {
   activityLogs      ActivityLog[]
   refreshTokens     RefreshToken[]
   savedListings     SavedListing[]
+  vehicleBookings   VehicleBooking[]
   notifications     Notification[]
   listingsCreated   Listing[]           @relation("ListingCreatedBy")
   stationReviews    StationReview[]
@@ -386,6 +387,7 @@ model Listing {
   verificationLevel   VerificationLevel  @default(BASIC_LISTED)
   isFeatured          Boolean            @default(false)
   isHotDeal           Boolean            @default(false)
+  isBooked            Boolean            @default(false)
   viewCount           Int                @default(0)
   adminNotes          String?            // admin only, not public
   publishedAt         DateTime?
@@ -408,6 +410,7 @@ model Listing {
   promotions          ListingPromotion[]
   sustainabilityData  SustainabilityMetric[]
   useCaseTags         ListingUseCase[]
+  vehicleBookings     VehicleBooking[]
 
   @@index([status, sellerType])
   @@index([brand, model])
@@ -718,6 +721,75 @@ model PaymentProof {
   payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   @@map("payment_proofs")
+}
+
+// ============================================================
+// SECTION 10b — VEHICLE BOOKINGS (China sourcing deposit)
+// ============================================================
+
+enum VehicleBookingStatus {
+  AWAITING_PAYMENT
+  PAYMENT_SUBMITTED
+  UNDER_VERIFICATION
+  CONFIRMED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+model VehicleBooking {
+  id                String               @id @default(cuid())
+  bookingNumber     String               @unique
+  paymentReference  String               @unique
+  listingId         String
+  userId            String
+  bookingFeeUsd     Float
+  currency          String               @default("USD")
+  status            VehicleBookingStatus @default(AWAITING_PAYMENT)
+  amountPaid        Float?
+  bankName          String?
+  transferReference String?
+  paymentDate       DateTime?
+  senderName        String?
+  notes             String?
+  rejectionReason   String?
+  validUntil        DateTime?
+  confirmedAt       DateTime?
+  verifiedBy        String?
+  verifiedAt        DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  listing           Listing              @relation(fields: [listingId], references: [id])
+  user              User                 @relation(fields: [userId], references: [id])
+  proofs            BookingPaymentProof[]
+
+  @@index([listingId])
+  @@index([userId])
+  @@index([status])
+  @@map("vehicle_bookings")
+}
+
+model BookingPaymentProof {
+  id         String         @id @default(cuid())
+  bookingId  String
+  fileUrl    String
+  fileType   String
+  fileName   String
+  uploadedAt DateTime       @default(now())
+
+  booking    VehicleBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("booking_payment_proofs")
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
 }
 
 // ============================================================

@@ -16,8 +16,6 @@ import { listingSeedVehicles } from './listings.seed-data';
 
 const ADMIN_EMAIL = 'admin@uza.local';
 const DOCS_IMAGES_DIR = join(process.cwd(), 'docs', 'images');
-const EXCHANGE_RATE_RWF = 1300;
-
 async function uploadSeedImagesToGridFs(): Promise<Map<string, string>> {
   const uri = process.env.MONGODB_URI?.trim();
   if (!uri) {
@@ -97,7 +95,6 @@ function rwandaStockPricing(basePriceUsd: number, discountUsd = 0) {
     basePriceUsd,
     discountUsd,
     finalPriceUsd,
-    finalPriceRwf: finalPriceUsd * EXCHANGE_RATE_RWF,
     currency: 'USD',
   };
 }

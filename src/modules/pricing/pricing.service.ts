@@ -74,14 +74,11 @@ export class PricingService {
     const base = input.basePriceUsd ?? 0;
     const discount = input.discountUsd ?? 0;
     const final = base - discount;
-    const rate = rule.exchangeRateRwf ?? 1300;
-
     return {
       sellerType: 'UZA_RWANDA_STOCK',
       basePriceUsd: base,
       discountUsd: discount,
       finalPriceUsd: final,
-      finalPriceRwf: final * rate,
       deliveryDaysMin: rule.deliveryDaysMin ?? 1,
       deliveryDaysMax: rule.deliveryDaysMax ?? 2,
       currency: 'USD',
@@ -103,8 +100,6 @@ export class PricingService {
     const margin = landing * ((rule.platformMarginPercent ?? 0) / 100);
     const discount = input.discountUsd ?? 0;
     const final = landing + margin - discount;
-    const rate = rule.exchangeRateRwf ?? 1300;
-
     return {
       sellerType: 'UZA_CHINA_SOURCING',
       fobPriceUsd: fob,
@@ -118,7 +113,6 @@ export class PricingService {
       marginUsd: margin,
       discountUsd: discount,
       finalPriceUsd: final,
-      finalPriceRwf: final * rate,
       deliveryDaysMin: rule.deliveryDaysMin ?? 42,
       deliveryDaysMax: rule.deliveryDaysMax ?? 56,
       currency: 'USD',
@@ -135,15 +129,12 @@ export class PricingService {
     const commission = finalPrice - payout;
     const discount = input.discountUsd ?? 0;
     const final = finalPrice - discount;
-    const rwfRate = rule.exchangeRateRwf ?? 1300;
-
     return {
       sellerType: 'LOCAL_SELLER',
       sellerDesiredPayoutUsd: payout,
       commissionUsd: commission,
       discountUsd: discount,
       finalPriceUsd: final,
-      finalPriceRwf: final * rwfRate,
       deliveryDaysMin: rule.deliveryDaysMin ?? 2,
       deliveryDaysMax: rule.deliveryDaysMax ?? 5,
       currency: 'USD',
@@ -162,8 +153,6 @@ export class PricingService {
       (fob + route + local + taxes) * ((rule.platformMarginPercent ?? 0) / 100);
     const discount = input.discountUsd ?? 0;
     const final = fob + route + local + taxes + margin - discount;
-    const rwfRate = rule.exchangeRateRwf ?? 1300;
-
     return {
       sellerType: 'INTERNATIONAL_SELLER',
       fobPriceUsd: fob,
@@ -173,20 +162,10 @@ export class PricingService {
       marginUsd: margin,
       discountUsd: discount,
       finalPriceUsd: final,
-      finalPriceRwf: final * rwfRate,
       deliveryDaysMin: rule.deliveryDaysMin ?? 42,
       deliveryDaysMax: rule.deliveryDaysMax ?? 70,
       currency: 'USD',
     };
-  }
-
-  /** Exchange rate locked at invoice time (USD → RWF). */
-  async getExchangeRateRwf(
-    sellerType: SellerType,
-    originCountry?: string,
-  ): Promise<number> {
-    const rule = await this.getActiveRule(sellerType, originCountry);
-    return rule.exchangeRateRwf ?? 1300;
   }
 
   private async getActiveRule(

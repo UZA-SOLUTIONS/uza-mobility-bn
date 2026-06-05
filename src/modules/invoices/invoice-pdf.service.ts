@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { Invoice } from '@prisma/client';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -12,7 +12,7 @@ export class InvoicePdfService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService,
+    private readonly platformSettingsService: PlatformSettingsService,
   ) {}
 
   async generate(invoiceId: string): Promise<string | null> {
@@ -24,7 +24,7 @@ export class InvoicePdfService {
       return null;
     }
 
-    const html = this.renderHtml(invoice);
+    const html = await this.renderHtml(invoice);
 
     await mkdir(this.storageDir, { recursive: true });
     const fileName = `${invoice.invoiceNumber.replace(/\//g, '-')}.html`;
@@ -61,18 +61,12 @@ export class InvoicePdfService {
     }
   }
 
-  private renderHtml(invoice: Invoice): string {
-    const companyName =
-      this.configService.get<string>('COMPANY_LEGAL_NAME') ??
-      'UZA Solutions Ltd';
-    const bankName =
-      invoice.bankName ??
-      this.configService.get<string>('COMPANY_BANK_NAME') ??
-      '—';
-    const accountNumber =
-      invoice.accountNumber ??
-      this.configService.get<string>('COMPANY_ACCOUNT_NUMBER') ??
-      '—';
+  private async renderHtml(invoice: Invoice): Promise<string> {
+    const company =
+      await this.platformSettingsService.getCompanyPaymentDetails();
+    const companyName = invoice.beneficiaryName ?? company.legalName;
+    const bankName = invoice.bankName ?? company.bankName;
+    const accountNumber = invoice.accountNumber ?? company.accountNumber;
 
     const formatMoney = (value: number | null | undefined, currency: string) =>
       value == null ? '—' : `${currency} ${value.toLocaleString('en-US')}`;
@@ -98,53 +92,30 @@ export class InvoicePdfService {
   <p class="muted">${companyName} · Proforma Invoice</p>
 
   <div class="box highlight">
-    <table>
-      <tr><td class="label">Invoice number</td><td><strong>${invoice.invoiceNumber}</strong></td></tr>
-      <tr><td class="label">Payment reference</td><td><strong>${invoice.paymentReference}</strong></td></tr>
-      <tr><td class="label">Status</td><td>${invoice.status}</td></tr>
-      <tr><td class="label">Valid until</td><td>${invoice.validUntil?.toISOString().slice(0, 10) ?? '—'}</td></tr>
-    </table>
-    <p><em>Include the payment reference in your bank transfer narration.</em></p>
+    <strong>Payment reference:</strong> ${invoice.paymentReference}<br />
+    <span class="muted">Use this reference when transferring funds.</span>
   </div>
 
   <div class="box">
-    <h3>Buyer</h3>
     <table>
-      <tr><td class="label">Name</td><td>${invoice.buyerName}</td></tr>
-      <tr><td class="label">Email</td><td>${invoice.buyerEmail ?? '—'}</td></tr>
-      <tr><td class="label">Phone</td><td>${invoice.buyerPhone ?? '—'}</td></tr>
-      <tr><td class="label">Address</td><td>${invoice.buyerAddress ?? '—'}</td></tr>
+      <tr><td class="label">Invoice number</td><td>${invoice.invoiceNumber}</td></tr>
+      <tr><td class="label">Buyer</td><td>${invoice.buyerName}</td></tr>
+      <tr><td class="label">Vehicle</td><td>${[invoice.vehicleBrand, invoice.vehicleModel, invoice.vehicleYear].filter(Boolean).join(' ') || '—'}</td></tr>
+      <tr><td class="label">Amount due</td><td><strong>${formatMoney(invoice.totalAmountUsd, invoice.currency)}</strong></td></tr>
+      <tr><td class="label">Valid until</td><td>${invoice.validUntil ? new Date(invoice.validUntil).toLocaleDateString('en-US') : '—'}</td></tr>
     </table>
   </div>
 
   <div class="box">
-    <h3>Vehicle</h3>
+    <strong>Bank transfer details</strong>
     <table>
-      <tr><td class="label">Vehicle</td><td>${invoice.vehicleBrand ?? ''} ${invoice.vehicleModel ?? ''} ${invoice.vehicleYear ?? ''}</td></tr>
-      <tr><td class="label">Condition</td><td>${invoice.vehicleCondition ?? '—'}</td></tr>
-      <tr><td class="label">Location</td><td>${invoice.vehicleLocation ?? '—'}</td></tr>
-    </table>
-  </div>
-
-  <div class="box">
-    <h3>Amount due</h3>
-    <table>
-      <tr><td class="label">Total (USD)</td><td><strong>${formatMoney(invoice.totalAmountUsd, 'USD')}</strong></td></tr>
-      <tr><td class="label">Total (RWF)</td><td>${formatMoney(invoice.totalAmountRwf, 'RWF')}</td></tr>
-    </table>
-  </div>
-
-  <div class="box">
-    <h3>Bank details</h3>
-    <table>
-      <tr><td class="label">Beneficiary</td><td>${invoice.beneficiaryName ?? companyName}</td></tr>
+      <tr><td class="label">Beneficiary</td><td>${companyName}</td></tr>
       <tr><td class="label">Bank</td><td>${bankName}</td></tr>
-      <tr><td class="label">Account</td><td>${accountNumber}</td></tr>
-      <tr><td class="label">Payment deadline</td><td>${invoice.paymentDeadline?.toISOString().slice(0, 10) ?? '—'}</td></tr>
+      <tr><td class="label">Account number</td><td>${accountNumber}</td></tr>
     </table>
   </div>
 
-  ${invoice.notes ? `<div class="box"><h3>Notes</h3><p>${invoice.notes}</p></div>` : ''}
+  ${invoice.notes ? `<p class="muted">Notes: ${invoice.notes}</p>` : ''}
 </body>
 </html>`;
   }

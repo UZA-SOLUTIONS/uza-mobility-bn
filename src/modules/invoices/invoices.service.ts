@@ -4,7 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   InvoiceStatus,
   InvoiceType,
@@ -17,6 +16,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { canTransition } from '../listings/listing-transitions';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateFleetInvoiceDto } from './dto/create-fleet-invoice.dto';
@@ -24,9 +24,12 @@ import { FilterInvoicesDto } from './dto/filter-invoices.dto';
 import { RequestInvoiceDto } from './dto/request-invoice.dto';
 import {
   ACTIVE_INVOICE_STATUSES,
+  BUYER_CANCELLABLE_INVOICE_STATUSES,
+  INACTIVE_INVOICE_STATUSES,
   INVOICE_VALIDITY_DAYS,
   PAYABLE_INVOICE_STATUSES,
 } from './invoice.constants';
+import { ACTIVE_BOOKING_STATUSES } from '../bookings/booking.constants';
 import { snapshotPricingFields, toBuyerInvoice } from './invoice.mapper';
 import { InvoicePdfService } from './invoice-pdf.service';
 
@@ -34,7 +37,7 @@ import { InvoicePdfService } from './invoice-pdf.service';
 export class InvoicesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService,
+    private readonly platformSettingsService: PlatformSettingsService,
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
     private readonly invoicePdfService: InvoicePdfService,
@@ -81,6 +84,23 @@ export class InvoicesService {
       );
     }
 
+    if (listing.isBooked) {
+      throw new BadRequestException('This vehicle is booked by another buyer');
+    }
+
+    const activeBooking = await this.prisma.vehicleBooking.findFirst({
+      where: {
+        listingId: listing.id,
+        status: { in: [...ACTIVE_BOOKING_STATUSES] },
+      },
+    });
+
+    if (activeBooking) {
+      throw new BadRequestException(
+        'This vehicle has an active booking. Complete or cancel it before requesting an invoice.',
+      );
+    }
+
     const blocking = await this.prisma.invoice.findFirst({
       where: {
         listingId: listing.id,
@@ -104,17 +124,10 @@ export class InvoicesService {
     ]);
 
     const validUntil = this.addDays(new Date(), INVOICE_VALIDITY_DAYS);
-    const bankName = this.configService.get<string>('COMPANY_BANK_NAME');
-    const accountNumber = this.configService.get<string>(
-      'COMPANY_ACCOUNT_NUMBER',
-    );
+    const company =
+      await this.platformSettingsService.getCompanyPaymentDetails();
 
-    const exchangeRate = await this.pricingService.getExchangeRateRwf(
-      listing.sellerType,
-      listing.country ?? undefined,
-    );
     const totalAmountUsd = listing.listingPricing.finalPriceUsd;
-    const totalAmountRwf = totalAmountUsd * exchangeRate;
 
     const invoice = await this.prisma.$transaction(async (tx) => {
       const inv = await tx.invoice.create({
@@ -138,14 +151,10 @@ export class InvoicesService {
           vehicleLocation: listing.vehicleLocation,
           sellerType: listing.sellerType,
           verificationLevel: listing.verificationLevel,
-          ...snapshotPricingFields(listing.listingPricing, {
-            totalAmountRwf,
-          }),
-          beneficiaryName:
-            this.configService.get<string>('COMPANY_LEGAL_NAME') ??
-            'UZA Solutions Ltd',
-          bankName,
-          accountNumber,
+          ...snapshotPricingFields(listing.listingPricing),
+          beneficiaryName: company.legalName,
+          bankName: company.bankName,
+          accountNumber: company.accountNumber,
           paymentDeadline: validUntil,
           validUntil,
           notes: dto.notes,
@@ -213,6 +222,8 @@ export class InvoicesService {
       where.status = { in: PAYABLE_INVOICE_STATUSES };
     } else if (filters.status) {
       where.status = filters.status;
+    } else {
+      where.status = { notIn: INACTIVE_INVOICE_STATUSES };
     }
 
     if (filters.listingId) {
@@ -269,25 +280,8 @@ export class InvoicesService {
     ]);
 
     const validUntil = this.addDays(new Date(), INVOICE_VALIDITY_DAYS);
-
-    let totalAmountRwf = dto.totalAmountRwf;
-    if (totalAmountRwf == null && dto.listingId) {
-      const listing = await this.prisma.listing.findUnique({
-        where: { id: dto.listingId },
-      });
-      if (listing) {
-        const rate = await this.pricingService.getExchangeRateRwf(
-          listing.sellerType,
-          listing.country ?? undefined,
-        );
-        totalAmountRwf = dto.totalAmountUsd * rate;
-      }
-    }
-    if (totalAmountRwf == null) {
-      const rate =
-        await this.pricingService.getExchangeRateRwf('UZA_RWANDA_STOCK');
-      totalAmountRwf = dto.totalAmountUsd * rate;
-    }
+    const company =
+      await this.platformSettingsService.getCompanyPaymentDetails();
 
     const invoice = await this.prisma.invoice.create({
       data: {
@@ -304,13 +298,10 @@ export class InvoicesService {
         vehicleBrand: dto.vehicleBrand,
         vehicleModel: dto.vehicleModel,
         totalAmountUsd: dto.totalAmountUsd,
-        totalAmountRwf,
         currency: 'USD',
-        beneficiaryName:
-          this.configService.get<string>('COMPANY_LEGAL_NAME') ??
-          'UZA Solutions Ltd',
-        bankName: this.configService.get<string>('COMPANY_BANK_NAME'),
-        accountNumber: this.configService.get<string>('COMPANY_ACCOUNT_NUMBER'),
+        beneficiaryName: company.legalName,
+        bankName: company.bankName,
+        accountNumber: company.accountNumber,
         paymentDeadline: validUntil,
         validUntil,
         notes: dto.notes,
@@ -344,6 +335,70 @@ export class InvoicesService {
     return toBuyerInvoice(invoice);
   }
 
+  async cancelInvoiceByBuyer(
+    userId: string,
+    invoiceId: string,
+    auditContext: RequestAuditContext = {},
+  ) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    if (invoice.userId !== userId) {
+      throw new ForbiddenException('You do not own this invoice');
+    }
+
+    if (!BUYER_CANCELLABLE_INVOICE_STATUSES.includes(invoice.status)) {
+      throw new BadRequestException(
+        'This reservation can only be cancelled before payment proof is submitted',
+      );
+    }
+
+    const paymentCount = await this.prisma.payment.count({
+      where: { invoiceId: invoice.id },
+    });
+
+    if (paymentCount > 0) {
+      throw new BadRequestException(
+        'Cannot cancel after a payment has been submitted',
+      );
+    }
+
+    const updated = await this.executeInvoiceCancellation(
+      invoice.id,
+      invoice.listingId,
+    );
+
+    await this.notificationsService.send({
+      userId,
+      type: NotificationType.SYSTEM_ALERT,
+      title: 'Reservation cancelled',
+      body: `Invoice ${invoice.invoiceNumber} was cancelled. The vehicle is available to reserve again if still listed.`,
+      metadata: { invoiceId: invoice.id, listingId: invoice.listingId },
+    });
+
+    await this.notifyAdminsReservationCancelled(invoice, userId);
+
+    await this.auditService.record({
+      userId,
+      action: 'invoices:buyer-cancelled',
+      entity: 'Invoice',
+      entityId: invoice.id,
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        email: auditContext.actorEmail,
+        invoiceNumber: invoice.invoiceNumber,
+      },
+    });
+
+    return toBuyerInvoice(updated);
+  }
+
   async cancelInvoice(
     adminUserId: string,
     invoiceId: string,
@@ -361,27 +416,10 @@ export class InvoicesService {
       );
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const inv = await tx.invoice.update({
-        where: { id: invoiceId },
-        data: { status: InvoiceStatus.CANCELLED },
-      });
-
-      if (invoice.listingId) {
-        const listing = await tx.listing.findUnique({
-          where: { id: invoice.listingId },
-        });
-
-        if (listing?.status === ListingStatus.RESERVED) {
-          await tx.listing.update({
-            where: { id: invoice.listingId },
-            data: { status: ListingStatus.PUBLISHED },
-          });
-        }
-      }
-
-      return inv;
-    });
+    const updated = await this.executeInvoiceCancellation(
+      invoice.id,
+      invoice.listingId,
+    );
 
     await this.auditService.record({
       userId: adminUserId,
@@ -467,6 +505,64 @@ export class InvoicesService {
         totalPages: Math.ceil(total / limit) || 1,
       },
     };
+  }
+
+  private async executeInvoiceCancellation(
+    invoiceId: string,
+    listingId: string | null,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const inv = await tx.invoice.update({
+        where: { id: invoiceId },
+        data: { status: InvoiceStatus.CANCELLED },
+      });
+
+      if (listingId) {
+        const listing = await tx.listing.findUnique({
+          where: { id: listingId },
+        });
+
+        if (listing?.status === ListingStatus.RESERVED) {
+          await tx.listing.update({
+            where: { id: listingId },
+            data: { status: ListingStatus.PUBLISHED },
+          });
+        }
+      }
+
+      return inv;
+    });
+  }
+
+  private async notifyAdminsReservationCancelled(
+    invoice: {
+      id: string;
+      invoiceNumber: string;
+      buyerName: string;
+      vehicleBrand: string | null;
+      vehicleModel: string | null;
+      listingId: string | null;
+    },
+    buyerUserId: string,
+  ) {
+    const vehicleLabel =
+      invoice.vehicleBrand && invoice.vehicleModel
+        ? `${invoice.vehicleBrand} ${invoice.vehicleModel}`
+        : 'a vehicle';
+
+    await this.notificationsService.sendToRoleNames(
+      ['FINANCE_ADMIN', 'SUPER_ADMIN'],
+      {
+        type: NotificationType.SYSTEM_ALERT,
+        title: 'Buyer cancelled reservation',
+        body: `${invoice.buyerName} cancelled invoice ${invoice.invoiceNumber} for ${vehicleLabel}.`,
+        metadata: {
+          invoiceId: invoice.id,
+          userId: buyerUserId,
+          listingId: invoice.listingId,
+        },
+      },
+    );
   }
 
   private async getInvoiceOrThrow(invoiceId: string) {

@@ -21,12 +21,18 @@ type ListingWithRelations = Prisma.ListingGetPayload<{
   };
 }>;
 
-export function getPublicDisplayBadge(status: ListingStatus): string | null {
+export function getPublicDisplayBadge(
+  status: ListingStatus,
+  isBooked?: boolean,
+): string | null {
+  if (isBooked) {
+    return 'Booked';
+  }
   switch (status) {
     case ListingStatus.SOLD:
       return 'Sold';
     case ListingStatus.RESERVED:
-      return 'Reserved - Pending Payment';
+      return 'Reserved';
     default:
       return null;
   }
@@ -60,12 +66,15 @@ export function toPublicListing<T extends ListingWithRelations>(
 
   return {
     ...rest,
+    videoUrl: rest.videoUrl
+      ? toAbsoluteUploadUrl(rest.videoUrl as string)
+      : rest.videoUrl,
     photos: listing.photos.map((photo) => ({
       ...photo,
       url: toAbsoluteUploadUrl(photo.url),
     })),
     listingPricing: toPublicPricing(listingPricing),
-    displayBadge: getPublicDisplayBadge(rest.status),
+    displayBadge: getPublicDisplayBadge(rest.status, rest.isBooked),
     ...(promotionDisplay ? { promotionDisplay } : {}),
   };
 }
