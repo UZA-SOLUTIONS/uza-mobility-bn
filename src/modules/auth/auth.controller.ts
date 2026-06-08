@@ -65,6 +65,15 @@ export class AuthController {
     return this.authService.login(dto, getRequestAuditContext(request));
   }
 
+  @Post('admin/login')
+  @Public()
+  @SkipAudit()
+  @ApiOperation({ summary: 'Login an admin user with email and password' })
+  @ApiOkResponse({ type: AuthResponseDto })
+  loginAdmin(@Body() dto: LoginDto, @Req() request: Request) {
+    return this.authService.loginAdmin(dto, getRequestAuditContext(request));
+  }
+
   @Post('refresh')
   @Public()
   @ApiBearerAuth('JWT-refresh')

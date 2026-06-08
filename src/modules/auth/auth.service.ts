@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { compareSync, genSaltSync, hashSync } from 'bcryptjs';
@@ -70,38 +74,17 @@ export class AuthService {
     dto: LoginDto,
     auditContext: RequestAuditContext = {},
   ): Promise<AuthResponseDto> {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-      include: {
-        roles: {
-          include: {
-            role: true,
-          },
-        },
-      },
+    return this.authenticateAndIssueTokens(dto, auditContext);
+  }
+
+  async loginAdmin(
+    dto: LoginDto,
+    auditContext: RequestAuditContext = {},
+  ): Promise<AuthResponseDto> {
+    return this.authenticateAndIssueTokens(dto, auditContext, {
+      adminOnly: true,
+      auditAction: 'auth:admin-login',
     });
-
-    if (!user || !this.verifyPassword(dto.password, user.passwordHash)) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
-
-    this.assertUserIsActive(user);
-
-    const safeUser = this.usersService.toSafeUser(user);
-    const tokens = await this.issueTokens(safeUser);
-
-    await this.auditService.record({
-      userId: safeUser.id,
-      action: 'auth:login',
-      entity: 'User',
-      ipAddress: auditContext.ipAddress,
-      userAgent: auditContext.userAgent,
-      metadata: {
-        email: safeUser.email,
-      },
-    });
-
-    return tokens;
   }
 
   async refresh(refreshToken: string): Promise<AuthResponseDto> {
@@ -235,6 +218,61 @@ export class AuthService {
       accessToken,
       refreshToken,
     };
+  }
+
+  private async authenticateAndIssueTokens(
+    dto: LoginDto,
+    auditContext: RequestAuditContext = {},
+    options: {
+      adminOnly?: boolean;
+      auditAction?: string;
+    } = {},
+  ): Promise<AuthResponseDto> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      include: {
+        roles: {
+          include: {
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!user || !this.verifyPassword(dto.password, user.passwordHash)) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    this.assertUserIsActive(user);
+
+    if (
+      options.adminOnly &&
+      !this.hasAdminRole(user.roles.map((role) => role.role.name))
+    ) {
+      throw new ForbiddenException('Admin access required');
+    }
+
+    const safeUser = this.usersService.toSafeUser(user);
+    const tokens = await this.issueTokens(safeUser);
+
+    await this.auditService.record({
+      userId: safeUser.id,
+      action: options.auditAction ?? 'auth:login',
+      entity: 'User',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        email: safeUser.email,
+      },
+    });
+
+    return tokens;
+  }
+
+  private hasAdminRole(roleNames: string[]): boolean {
+    return roleNames.some(
+      (roleName) => roleName === 'SUPER_ADMIN' || roleName.endsWith('_ADMIN'),
+    );
   }
 
   private assertUserIsActive(user: {
