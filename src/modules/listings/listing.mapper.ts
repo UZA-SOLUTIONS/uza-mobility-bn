@@ -28,14 +28,10 @@ export function getPublicDisplayBadge(
   if (isBooked) {
     return 'Booked';
   }
-  switch (status) {
-    case ListingStatus.SOLD:
-      return 'Sold';
-    case ListingStatus.RESERVED:
-      return 'Reserved';
-    default:
-      return null;
+  if (status === ListingStatus.SOLD) {
+    return 'Sold';
   }
+  return null;
 }
 
 export function toPublicPricing(pricing: ListingPricing | null) {
@@ -69,6 +65,9 @@ export function toPublicListing<T extends ListingWithRelations>(
     videoUrl: rest.videoUrl
       ? toAbsoluteUploadUrl(rest.videoUrl as string)
       : rest.videoUrl,
+    brochureUrl: rest.brochureUrl
+      ? toAbsoluteUploadUrl(rest.brochureUrl as string)
+      : rest.brochureUrl,
     photos: listing.photos.map((photo) => ({
       ...photo,
       url: toAbsoluteUploadUrl(photo.url),

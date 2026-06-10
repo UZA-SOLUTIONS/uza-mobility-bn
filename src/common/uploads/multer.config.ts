@@ -56,7 +56,9 @@ export const listingMediaMulterOptions = {
     const allowed: readonly string[] =
       file.fieldname === 'video'
         ? UPLOAD_VIDEO_MIME_TYPES
-        : UPLOAD_IMAGE_MIME_TYPES;
+        : file.fieldname === 'brochure'
+          ? UPLOAD_DOCUMENT_MIME_TYPES
+          : UPLOAD_IMAGE_MIME_TYPES;
     if (!allowed.includes(file.mimetype)) {
       callback(
         new BadRequestException(

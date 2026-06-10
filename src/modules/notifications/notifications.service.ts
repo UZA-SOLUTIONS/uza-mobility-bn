@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
-import { MailService } from './mail.service';
+import { MailService } from '../../common/mail/mail.service';
 import { NotificationsGateway } from './notifications.gateway';
 import {
   type SendNotificationInput,

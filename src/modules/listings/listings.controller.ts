@@ -90,6 +90,28 @@ export class ListingsController {
     return this.listingsService.recentlyReduced();
   }
 
+  @Get('wishlist/ids')
+  @ApiBearerAuth('JWT-access')
+  @ApiOperation({ summary: 'Listing IDs saved to the signed-in user wishlist' })
+  wishlistIds(@Req() request: AuthenticatedRequest) {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    return this.listingsService.getWishlistIds(request.user.sub);
+  }
+
+  @Get('wishlist')
+  @ApiBearerAuth('JWT-access')
+  @ApiOperation({ summary: 'Published listings saved to the signed-in user wishlist' })
+  wishlist(@Req() request: AuthenticatedRequest) {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    return this.listingsService.getWishlist(request.user.sub);
+  }
+
   @Get('my')
   @ApiBearerAuth('JWT-access')
   @UseGuards(RolesGuard)
@@ -206,6 +228,34 @@ export class ListingsController {
     );
 
     return { message: 'Listing deleted' };
+  }
+
+  @Post(':id/wishlist')
+  @ApiBearerAuth('JWT-access')
+  @ApiOperation({ summary: 'Save a published listing to wishlist' })
+  addToWishlist(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    return this.listingsService.addToWishlist(request.user.sub, id);
+  }
+
+  @Delete(':id/wishlist')
+  @ApiBearerAuth('JWT-access')
+  @ApiOperation({ summary: 'Remove a listing from wishlist' })
+  removeFromWishlist(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    return this.listingsService.removeFromWishlist(request.user.sub, id);
   }
 
   @Post(':id/submit')

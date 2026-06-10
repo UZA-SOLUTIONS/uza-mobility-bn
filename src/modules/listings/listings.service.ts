@@ -24,6 +24,7 @@ import { UpdateListingDto } from './dto/update-listing.dto';
 import type {
   AdminCreateListingPayload,
   AdminUpdateListingPayload,
+  ListingUpdateFields,
 } from './dto/listing-write.types';
 import { canTransition } from './listing-transitions';
 import {
@@ -503,6 +504,7 @@ export class ListingsService {
     const {
       removePhotoIds,
       removeVideo,
+      removeBrochure,
       pricing,
       photoUrls,
       status,
@@ -548,6 +550,17 @@ export class ListingsService {
       listingFields.videoUrl !== listing.videoUrl
     ) {
       await this.storage.deleteByUrl(listing.videoUrl);
+    }
+
+    if (removeBrochure && listing.brochureUrl) {
+      await this.storage.deleteByUrl(listing.brochureUrl);
+      listingFields.brochureUrl = null;
+    } else if (
+      listingFields.brochureUrl &&
+      listing.brochureUrl &&
+      listingFields.brochureUrl !== listing.brochureUrl
+    ) {
+      await this.storage.deleteByUrl(listing.brochureUrl);
     }
 
     const sellerType = listing.sellerType;
@@ -1332,6 +1345,8 @@ export class ListingsService {
       deliveryEstimateDays: dto.deliveryEstimateDays ?? deliveryDaysMax,
       description: dto.description,
       videoUrl: dto.videoUrl,
+      brochureUrl: (dto as AdminCreateListingPayload).brochureUrl,
+      isFullOption: dto.isFullOption ?? false,
       listingPricing: {
         create: pricingCreate,
       },
@@ -1345,7 +1360,7 @@ export class ListingsService {
   }
 
   private buildListingUpdateData(
-    dto: UpdateListingDto,
+    dto: ListingUpdateFields,
   ): Prisma.ListingUpdateInput {
     const data: Prisma.ListingUpdateInput = {
       listingTitle: dto.listingTitle,
@@ -1374,6 +1389,8 @@ export class ListingsService {
       deliveryEstimateDays: dto.deliveryEstimateDays,
       description: dto.description,
       videoUrl: dto.videoUrl,
+      brochureUrl: dto.brochureUrl,
+      isFullOption: dto.isFullOption,
     };
 
     if (dto.categoryId) {
@@ -1676,5 +1693,69 @@ export class ListingsService {
         displayOrder: existingCount + index,
       })),
     });
+  }
+
+  async getWishlistIds(userId: string): Promise<string[]> {
+    const rows = await this.prisma.savedListing.findMany({
+      where: { userId },
+      select: { listingId: true },
+      orderBy: { savedAt: 'desc' },
+    });
+
+    return rows.map((row) => row.listingId);
+  }
+
+  async getWishlist(userId: string) {
+    const rows = await this.prisma.savedListing.findMany({
+      where: { userId },
+      orderBy: { savedAt: 'desc' },
+      include: {
+        listing: {
+          include: publicListingInclude,
+        },
+      },
+    });
+
+    const published = rows
+      .map((row) => row.listing)
+      .filter(
+        (listing) =>
+          listing.status === ListingStatus.PUBLISHED && !listing.deletedAt,
+      );
+
+    return this.mapPublicListings(published);
+  }
+
+  async addToWishlist(userId: string, listingId: string) {
+    const listing = await this.prisma.listing.findFirst({
+      where: {
+        id: listingId,
+        status: ListingStatus.PUBLISHED,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+
+    await this.prisma.savedListing.upsert({
+      where: {
+        userId_listingId: { userId, listingId },
+      },
+      create: { userId, listingId },
+      update: { savedAt: new Date() },
+    });
+
+    return { message: 'Saved to wishlist' };
+  }
+
+  async removeFromWishlist(userId: string, listingId: string) {
+    await this.prisma.savedListing.deleteMany({
+      where: { userId, listingId },
+    });
+
+    return { message: 'Removed from wishlist' };
   }
 }

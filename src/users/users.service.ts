@@ -770,6 +770,7 @@ export class UsersService {
     return {
       id: user.id,
       email: user.email,
+      googleId: user.googleId,
       phone: user.phone,
       firstName: user.firstName,
       lastName: user.lastName,

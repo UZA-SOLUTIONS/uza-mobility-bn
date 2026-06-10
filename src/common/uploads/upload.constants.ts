@@ -32,5 +32,6 @@ export enum UploadFolder {
   PROMOTIONS = 'promotions',
   VERIFICATION = 'verification',
   PROFILES = 'profiles',
+  QUOTES = 'quotes',
   GENERAL = 'general',
 }

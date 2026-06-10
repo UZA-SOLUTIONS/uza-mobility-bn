@@ -14,7 +14,6 @@ import {
 import { generateReferenceNumber } from '../../common/utils/reference-number.util';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
-import { canTransition } from '../listings/listing-transitions';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -29,7 +28,6 @@ import {
   INVOICE_VALIDITY_DAYS,
   PAYABLE_INVOICE_STATUSES,
 } from './invoice.constants';
-import { ACTIVE_BOOKING_STATUSES } from '../bookings/booking.constants';
 import { snapshotPricingFields, toBuyerInvoice } from './invoice.mapper';
 import { InvoicePdfService } from './invoice-pdf.service';
 
@@ -88,34 +86,18 @@ export class InvoicesService {
       throw new BadRequestException('This vehicle is booked by another buyer');
     }
 
-    const activeBooking = await this.prisma.vehicleBooking.findFirst({
+    const userActiveInvoice = await this.prisma.invoice.findFirst({
       where: {
         listingId: listing.id,
-        status: { in: [...ACTIVE_BOOKING_STATUSES] },
-      },
-    });
-
-    if (activeBooking) {
-      throw new BadRequestException(
-        'This vehicle has an active booking. Complete or cancel it before requesting an invoice.',
-      );
-    }
-
-    const blocking = await this.prisma.invoice.findFirst({
-      where: {
-        listingId: listing.id,
+        userId,
         status: { in: ACTIVE_INVOICE_STATUSES },
       },
     });
 
-    if (blocking) {
+    if (userActiveInvoice) {
       throw new BadRequestException(
-        'This vehicle already has an active invoice or reservation',
+        'You already have an active invoice for this vehicle. Complete or cancel it before requesting another.',
       );
-    }
-
-    if (!canTransition(listing.status, ListingStatus.RESERVED)) {
-      throw new BadRequestException('Listing cannot be reserved');
     }
 
     const [invoiceNumber, paymentReference] = await Promise.all([
@@ -163,11 +145,6 @@ export class InvoicesService {
             ? `${listing.deliveryEstimateDays} days`
             : undefined,
         },
-      });
-
-      await tx.listing.update({
-        where: { id: listing.id },
-        data: { status: ListingStatus.RESERVED },
       });
 
       return inv;

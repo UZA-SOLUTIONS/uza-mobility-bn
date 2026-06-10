@@ -28,4 +28,9 @@ export class UpdatePlatformSettingsDto {
   @IsString()
   @MinLength(1)
   companyAccountNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  companyWhatsappNumber?: string;
 }

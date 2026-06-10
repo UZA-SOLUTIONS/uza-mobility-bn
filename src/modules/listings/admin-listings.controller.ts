@@ -71,6 +71,7 @@ export class AdminListingsController {
       [
         { name: 'photos', maxCount: 20 },
         { name: 'video', maxCount: 1 },
+        { name: 'brochure', maxCount: 1 },
       ],
       listingMediaMulterOptions,
     ),
@@ -83,6 +84,7 @@ export class AdminListingsController {
         items: { type: 'string', format: 'binary' },
       },
       video: { type: 'string', format: 'binary' },
+      brochure: { type: 'string', format: 'binary' },
     }),
   })
   @ApiOperation({
@@ -96,6 +98,7 @@ export class AdminListingsController {
     files?: {
       photos?: Express.Multer.File[];
       video?: Express.Multer.File[];
+      brochure?: Express.Multer.File[];
     },
   ) {
     return this.requireAdmin(request, async (userId, ctx) => {
@@ -117,6 +120,15 @@ export class AdminListingsController {
             )
           ).url
         : undefined;
+      const brochureUrl = files?.brochure?.[0]
+        ? (
+            await this.storage.uploadImage(
+              files.brochure[0],
+              UploadFolder.LISTINGS,
+              'raw',
+            )
+          ).url
+        : undefined;
 
       return this.listingsService.createByAdmin(
         userId,
@@ -124,6 +136,7 @@ export class AdminListingsController {
           ...dto,
           ...(photoUrls ? { photoUrls } : {}),
           ...(videoUrl ? { videoUrl } : {}),
+          ...(brochureUrl ? { brochureUrl } : {}),
         },
         ctx,
       );
@@ -139,6 +152,7 @@ export class AdminListingsController {
       [
         { name: 'photos', maxCount: 20 },
         { name: 'video', maxCount: 1 },
+        { name: 'brochure', maxCount: 1 },
       ],
       listingMediaMulterOptions,
     ),
@@ -151,6 +165,7 @@ export class AdminListingsController {
         items: { type: 'string', format: 'binary' },
       },
       video: { type: 'string', format: 'binary' },
+      brochure: { type: 'string', format: 'binary' },
     }),
   })
   @ApiOperation({
@@ -164,6 +179,7 @@ export class AdminListingsController {
     files?: {
       photos?: Express.Multer.File[];
       video?: Express.Multer.File[];
+      brochure?: Express.Multer.File[];
     },
   ) {
     return this.requireAdmin(request, async (userId, ctx) => {
@@ -185,6 +201,15 @@ export class AdminListingsController {
             )
           ).url
         : undefined;
+      const brochureUrl = files?.brochure?.[0]
+        ? (
+            await this.storage.uploadImage(
+              files.brochure[0],
+              UploadFolder.LISTINGS,
+              'raw',
+            )
+          ).url
+        : undefined;
 
       return this.listingsService.updateCreatedByAdmin(
         userId,
@@ -193,6 +218,7 @@ export class AdminListingsController {
           ...dto,
           ...(photoUrls ? { photoUrls } : {}),
           ...(videoUrl ? { videoUrl } : {}),
+          ...(brochureUrl ? { brochureUrl } : {}),
         },
         ctx,
       );

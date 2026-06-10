@@ -40,13 +40,23 @@ export class PlatformSettingsService {
   }
 
   async getCompanyPaymentDetails(): Promise<CompanyPaymentDetails> {
-    const [legalName, bankName, accountNumber] = await Promise.all([
-      this.getString(PLATFORM_SETTING_KEYS.companyLegalName),
-      this.getString(PLATFORM_SETTING_KEYS.companyBankName),
-      this.getString(PLATFORM_SETTING_KEYS.companyAccountNumber),
-    ]);
+    const [legalName, bankName, accountNumber, whatsappNumber] =
+      await Promise.all([
+        this.getString(PLATFORM_SETTING_KEYS.companyLegalName),
+        this.getString(PLATFORM_SETTING_KEYS.companyBankName),
+        this.getString(PLATFORM_SETTING_KEYS.companyAccountNumber),
+        this.getString(PLATFORM_SETTING_KEYS.companyWhatsappNumber),
+      ]);
 
-    return { legalName, bankName, accountNumber };
+    return { legalName, bankName, accountNumber, whatsappNumber };
+  }
+
+  buildWhatsAppUrl(whatsappNumber: string, message: string): string {
+    const digits = whatsappNumber.replace(/\D/g, '');
+    if (!digits) {
+      return 'https://wa.me/';
+    }
+    return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
   }
 
   async getSettings(): Promise<PlatformSettingsSnapshot> {
@@ -58,6 +68,7 @@ export class PlatformSettingsService {
       companyLegalName: company.legalName,
       companyBankName: company.bankName,
       companyAccountNumber: company.accountNumber,
+      companyWhatsappNumber: company.whatsappNumber,
       currency: 'USD',
     };
   }
@@ -91,6 +102,12 @@ export class PlatformSettingsService {
       updates.push({
         key: PLATFORM_SETTING_KEYS.companyAccountNumber,
         value: dto.companyAccountNumber.trim(),
+      });
+    }
+    if (dto.companyWhatsappNumber != null) {
+      updates.push({
+        key: PLATFORM_SETTING_KEYS.companyWhatsappNumber,
+        value: dto.companyWhatsappNumber.replace(/\D/g, ''),
       });
     }
 

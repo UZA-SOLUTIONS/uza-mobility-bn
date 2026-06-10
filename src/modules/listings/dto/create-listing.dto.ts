@@ -166,6 +166,13 @@ export class CreateListingDto {
   @IsUrl()
   videoUrl?: string;
 
+  @ApiPropertyOptional({
+    description: 'Whether the vehicle is full option / fully loaded trim',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isFullOption?: boolean;
+
   @ApiPropertyOptional({ type: CreateEvSpecDto })
   @IsOptional()
   @ValidateNested()

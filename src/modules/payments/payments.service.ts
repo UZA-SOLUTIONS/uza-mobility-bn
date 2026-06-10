@@ -13,6 +13,11 @@ import {
 } from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
+import { SUPERSEDED_BY_OTHER_BUYER_MESSAGE } from '../commerce/supersede.constants';
+import {
+  supersedeActiveBookingsForListing,
+  supersedeActiveInvoicesForListing,
+} from '../commerce/supersede.util';
 import { canTransition } from '../listings/listing-transitions';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
@@ -156,34 +161,55 @@ export class PaymentsService {
 
     this.assertPaymentTransition(payment.status, PaymentStatus.CONFIRMED);
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.payment.update({
-        where: { id: paymentId },
-        data: {
-          status: PaymentStatus.CONFIRMED,
-          verifiedBy: adminUserId,
-          verifiedAt: new Date(),
-        },
-      });
-
-      await tx.invoice.update({
-        where: { id: payment.invoiceId },
-        data: { status: InvoiceStatus.PAYMENT_CONFIRMED },
-      });
-
-      if (payment.invoice.listingId) {
-        const listing = await tx.listing.findUnique({
-          where: { id: payment.invoice.listingId },
+    const listingId = payment.invoice.listingId;
+    const { supersededInvoices, supersededBookings } =
+      await this.prisma.$transaction(async (tx) => {
+        await tx.payment.update({
+          where: { id: paymentId },
+          data: {
+            status: PaymentStatus.CONFIRMED,
+            verifiedBy: adminUserId,
+            verifiedAt: new Date(),
+          },
         });
 
-        if (listing && canTransition(listing.status, ListingStatus.SOLD)) {
-          await tx.listing.update({
-            where: { id: payment.invoice.listingId },
-            data: { status: ListingStatus.SOLD },
+        await tx.invoice.update({
+          where: { id: payment.invoiceId },
+          data: { status: InvoiceStatus.PAYMENT_CONFIRMED },
+        });
+
+        let supersededInvoices: Awaited<
+          ReturnType<typeof supersedeActiveInvoicesForListing>
+        > = [];
+        let supersededBookings: Awaited<
+          ReturnType<typeof supersedeActiveBookingsForListing>
+        > = [];
+
+        if (listingId) {
+          const listing = await tx.listing.findUnique({
+            where: { id: listingId },
           });
+
+          if (listing && canTransition(listing.status, ListingStatus.SOLD)) {
+            await tx.listing.update({
+              where: { id: listingId },
+              data: { status: ListingStatus.SOLD },
+            });
+          }
+
+          supersededInvoices = await supersedeActiveInvoicesForListing(
+            tx,
+            listingId,
+            payment.invoiceId,
+          );
+          supersededBookings = await supersedeActiveBookingsForListing(
+            tx,
+            listingId,
+          );
         }
-      }
-    });
+
+        return { supersededInvoices, supersededBookings };
+      });
 
     await this.ordersService.createFromInvoice(payment.invoiceId);
 
@@ -197,6 +223,26 @@ export class PaymentsService {
         paymentId,
       },
     });
+
+    for (const invoice of supersededInvoices) {
+      await this.notificationsService.send({
+        userId: invoice.userId,
+        type: NotificationType.SYSTEM_ALERT,
+        title: 'Vehicle no longer available',
+        body: `${SUPERSEDED_BY_OTHER_BUYER_MESSAGE} Invoice ${invoice.invoiceNumber} was cancelled.`,
+        metadata: { invoiceId: invoice.id, listingId },
+      });
+    }
+
+    for (const booking of supersededBookings) {
+      await this.notificationsService.send({
+        userId: booking.userId,
+        type: NotificationType.SYSTEM_ALERT,
+        title: 'Vehicle no longer available',
+        body: `${SUPERSEDED_BY_OTHER_BUYER_MESSAGE} Booking ${booking.bookingNumber} was cancelled.`,
+        metadata: { bookingId: booking.id, listingId },
+      });
+    }
 
     await this.auditService.record({
       userId: adminUserId,

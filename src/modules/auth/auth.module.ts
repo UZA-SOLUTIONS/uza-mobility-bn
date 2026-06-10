@@ -6,6 +6,7 @@ import { PassportModule } from '@nestjs/passport';
 import type { SignOptions } from 'jsonwebtoken';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { GoogleOAuthService } from './google-oauth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -13,11 +14,13 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { RbacService } from './rbac.service';
 import { UsersModule } from '../../users/users.module';
+import { MailModule } from '../../common/mail/mail.module';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     ConfigModule,
+    MailModule,
     forwardRef(() => UsersModule),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -37,6 +40,7 @@ import { UsersModule } from '../../users/users.module';
   controllers: [AuthController],
   providers: [
     AuthService,
+    GoogleOAuthService,
     RbacService,
     JwtStrategy,
     JwtRefreshStrategy,

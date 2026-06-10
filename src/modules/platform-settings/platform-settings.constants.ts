@@ -3,6 +3,7 @@ export const PLATFORM_SETTING_KEYS = {
   companyLegalName: 'companyLegalName',
   companyBankName: 'companyBankName',
   companyAccountNumber: 'companyAccountNumber',
+  companyWhatsappNumber: 'companyWhatsappNumber',
 } as const;
 
 export type PlatformSettingKey =
@@ -14,6 +15,7 @@ export const DEFAULT_PLATFORM_SETTINGS: Record<PlatformSettingKey, string> = {
   companyLegalName: 'UZA Solutions Ltd',
   companyBankName: 'Your Bank Name',
   companyAccountNumber: '0000000000',
+  companyWhatsappNumber: '250788000000',
 };
 
 export const DEFAULT_BOOKING_FEE_USD = Number(
@@ -25,6 +27,7 @@ export type PlatformSettingsSnapshot = {
   companyLegalName: string;
   companyBankName: string;
   companyAccountNumber: string;
+  companyWhatsappNumber: string;
   currency: 'USD';
 };
 
@@ -32,4 +35,5 @@ export type CompanyPaymentDetails = {
   legalName: string;
   bankName: string;
   accountNumber: string;
+  whatsappNumber: string;
 };

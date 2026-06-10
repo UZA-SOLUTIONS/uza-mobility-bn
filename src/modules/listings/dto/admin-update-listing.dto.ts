@@ -28,6 +28,11 @@ class AdminUpdateListingExtrasDto {
   @IsBoolean()
   removeVideo?: boolean;
 
+  @ApiPropertyOptional({ description: 'Remove the vehicle brochure PDF' })
+  @IsOptional()
+  @IsBoolean()
+  removeBrochure?: boolean;
+
   @ApiPropertyOptional({
     enum: ListingStatus,
     description:

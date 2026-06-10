@@ -113,6 +113,53 @@ export class StorageService implements OnModuleInit {
     return assets.map((asset) => asset.url);
   }
 
+  async uploadBuffer(
+    buffer: Buffer,
+    folder: UploadFolder,
+    filename: string,
+    contentType: string,
+  ): Promise<UploadedAsset> {
+    if (!buffer.length) {
+      throw new BadRequestException('Empty file buffer');
+    }
+
+    const publicId = `${folder}/${filename.replace(/\\/g, '/').replace(/^\/+/, '')}`;
+    const bucket = this.mongo.getUploadsBucket();
+
+    const { bytes } = await gridFsUploadBuffer(bucket, publicId, buffer, {
+      contentType,
+      folder,
+      originalName: filename.split('/').pop() ?? filename,
+    });
+
+    return {
+      url: this.toPublicUrl(publicId),
+      publicId,
+      bytes,
+      format: filename.split('.').pop(),
+    };
+  }
+
+  async readBufferByUrl(url: string | null | undefined): Promise<Buffer | null> {
+    const publicId = this.publicIdFromUrl(url);
+    if (!publicId) return null;
+
+    const bucket = this.mongo.getUploadsBucket();
+    const file = await gridFsFindByFilename(bucket, publicId);
+    if (!file) return null;
+
+    const stream = gridFsOpenDownloadStream(bucket, file);
+    const chunks: Buffer[] = [];
+
+    await new Promise<void>((resolve, reject) => {
+      stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      stream.on('error', reject);
+      stream.on('end', resolve);
+    });
+
+    return Buffer.concat(chunks);
+  }
+
   async streamPublicFile(publicId: string, res: Response): Promise<void> {
     const key = normalizePublicId(publicId);
     if (!key || key.includes('..')) {

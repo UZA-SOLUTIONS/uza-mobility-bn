@@ -55,6 +55,7 @@ model RolePermission {
 model User {
   id                String              @id @default(cuid())
   email             String              @unique
+  googleId          String?             @unique
   phone             String?
   passwordHash      String
   firstName         String
@@ -78,8 +79,10 @@ model User {
   fleetRequests     FleetRequest[]
   activityLogs      ActivityLog[]
   refreshTokens     RefreshToken[]
+  authTokens        AuthToken[]
   savedListings     SavedListing[]
   vehicleBookings   VehicleBooking[]
+  inquiries         Inquiry[]
   notifications     Notification[]
   listingsCreated   Listing[]           @relation("ListingCreatedBy")
   stationReviews    StationReview[]
@@ -107,6 +110,25 @@ model RefreshToken {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
+}
+
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+model AuthToken {
+  id        String        @id @default(cuid())
+  userId    String
+  tokenHash String        @unique
+  type      AuthTokenType
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("auth_tokens")
 }
 
 // ============================================================
@@ -383,6 +405,8 @@ model Listing {
   availabilityStatus  String             @default("AVAILABLE")
   deliveryEstimateDays Int?
   videoUrl            String?
+  brochureUrl         String?
+  isFullOption        Boolean            @default(false)
   description         String?
   verificationLevel   VerificationLevel  @default(BASIC_LISTED)
   isFeatured          Boolean            @default(false)
@@ -411,6 +435,7 @@ model Listing {
   sustainabilityData  SustainabilityMetric[]
   useCaseTags         ListingUseCase[]
   vehicleBookings     VehicleBooking[]
+  inquiries           Inquiry[]
 
   @@index([status, sellerType])
   @@index([brand, model])
@@ -781,6 +806,44 @@ model BookingPaymentProof {
   booking    VehicleBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@map("booking_payment_proofs")
+}
+
+// ============================================================
+// SECTION 10c — VEHICLE INQUIRIES (quote-first flow)
+// ============================================================
+
+enum InquiryStatus {
+  RECEIVED
+  CONTACTED
+  QUOTED
+  CONVERTED
+  CLOSED
+}
+
+model Inquiry {
+  id            String        @id @default(cuid())
+  quoteNumber   String        @unique
+  userId        String?
+  listingId     String?
+  name          String
+  phone         String
+  email         String
+  country       String
+  buyerType     BuyerType
+  message       String?
+  status        InquiryStatus @default(RECEIVED)
+  quotePdfUrl   String?
+  internalNotes String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user          User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  listing       Listing?      @relation(fields: [listingId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([status])
+  @@index([listingId])
+  @@map("inquiries")
 }
 
 model PlatformSetting {

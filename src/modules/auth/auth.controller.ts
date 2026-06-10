@@ -5,11 +5,14 @@ import {
   Headers,
   Patch,
   Post,
+  Query,
   Req,
+  Res,
   UnauthorizedException,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -31,6 +34,13 @@ import { AuthResponseDto } from './dto/auth-response.dto';
 import { MeResponseDto } from './dto/me-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { RegisterResponseDto } from './dto/register-response.dto';
+import { GoogleCompleteDto } from './dto/google-complete.dto';
+import { GoogleOAuthService } from './google-oauth.service';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { MessageResponseDto } from './dto/message-response.dto';
 import { AuthService } from './auth.service';
 import { UsersService } from '../../users/users.service';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
@@ -43,6 +53,7 @@ import type { Request } from 'express';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly googleOAuthService: GoogleOAuthService,
     private readonly usersService: UsersService,
     private readonly storage: StorageService,
   ) {}
@@ -51,7 +62,7 @@ export class AuthController {
   @Public()
   @SkipAudit()
   @ApiOperation({ summary: 'Register a new user' })
-  @ApiOkResponse({ type: AuthResponseDto })
+  @ApiOkResponse({ type: RegisterResponseDto })
   register(@Body() dto: RegisterDto, @Req() request: Request) {
     return this.authService.register(dto, getRequestAuditContext(request));
   }
@@ -65,6 +76,93 @@ export class AuthController {
     return this.authService.login(dto, getRequestAuditContext(request));
   }
 
+  @Get('google')
+  @Public()
+  @SkipAudit()
+  @ApiOperation({
+    summary: 'Start Google OAuth (redirects to Google — uses client secret on callback)',
+  })
+  startGoogleOAuth(
+    @Query('returnTo') returnTo: string | undefined,
+    @Res() response: Response,
+  ) {
+    if (!this.googleOAuthService.isConfigured()) {
+      return response.redirect(
+        this.googleOAuthService.buildFrontendErrorUrl(
+          'Google sign-in is not configured',
+          returnTo,
+        ),
+      );
+    }
+
+    const url = this.googleOAuthService.getAuthorizationUrl(returnTo);
+    return response.redirect(url);
+  }
+
+  @Get('google/callback')
+  @Public()
+  @SkipAudit()
+  @ApiOperation({ summary: 'Google OAuth callback — exchanges code with client secret' })
+  async googleOAuthCallback(
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+    @Query('error') error: string | undefined,
+    @Res() response: Response,
+  ) {
+    if (error) {
+      return response.redirect(
+        this.googleOAuthService.buildFrontendErrorUrl(
+          'Google sign-in was cancelled',
+        ),
+      );
+    }
+
+    if (!code || !state) {
+      return response.redirect(
+        this.googleOAuthService.buildFrontendErrorUrl(
+          'Missing Google authorization response',
+        ),
+      );
+    }
+
+    try {
+      const result = await this.googleOAuthService.exchangeAuthorizationCode(
+        code,
+        state,
+      );
+      return response.redirect(
+        this.googleOAuthService.buildFrontendCallbackUrl(
+          result.exchangeCode,
+          result.returnTo,
+        ),
+      );
+    } catch {
+      return response.redirect(
+        this.googleOAuthService.buildFrontendErrorUrl(
+          'Unable to complete Google sign-in',
+        ),
+      );
+    }
+  }
+
+  @Post('google/complete')
+  @Public()
+  @SkipAudit()
+  @ApiOperation({
+    summary: 'Finish Google sign-in after OAuth callback redirect',
+  })
+  @ApiOkResponse({ type: AuthResponseDto })
+  completeGoogleOAuth(
+    @Body() dto: GoogleCompleteDto,
+    @Req() request: Request,
+  ) {
+    const profile = this.googleOAuthService.consumePendingExchange(dto.code);
+    return this.authService.loginWithGoogleProfile(
+      profile,
+      getRequestAuditContext(request),
+    );
+  }
+
   @Post('admin/login')
   @Public()
   @SkipAudit()
@@ -72,6 +170,61 @@ export class AuthController {
   @ApiOkResponse({ type: AuthResponseDto })
   loginAdmin(@Body() dto: LoginDto, @Req() request: Request) {
     return this.authService.loginAdmin(dto, getRequestAuditContext(request));
+  }
+
+  @Post('forgot-password')
+  @Public()
+  @SkipAudit()
+  @ApiOperation({ summary: 'Request a password reset email' })
+  @ApiOkResponse({ type: MessageResponseDto })
+  forgotPassword(@Body() dto: ForgotPasswordDto): Promise<MessageResponseDto> {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  @Post('reset-password')
+  @Public()
+  @SkipAudit()
+  @ApiOperation({ summary: 'Set a new password using a reset token' })
+  @ApiOkResponse({ type: MessageResponseDto })
+  resetPassword(@Body() dto: ResetPasswordDto): Promise<MessageResponseDto> {
+    return this.authService.resetPassword(dto.token, dto.password);
+  }
+
+  @Post('verify-email')
+  @Public()
+  @SkipAudit()
+  @ApiOperation({ summary: 'Verify email address using a verification token' })
+  @ApiOkResponse({ type: MessageResponseDto })
+  verifyEmail(@Body() dto: VerifyEmailDto): Promise<MessageResponseDto> {
+    return this.authService.verifyEmail(dto.token);
+  }
+
+  @Post('resend-verification')
+  @Public()
+  @SkipAudit()
+  @ApiOperation({ summary: 'Resend email verification link by email address' })
+  @ApiOkResponse({ type: MessageResponseDto })
+  resendVerification(
+    @Body() dto: ForgotPasswordDto,
+  ): Promise<MessageResponseDto> {
+    return this.authService.resendVerificationByEmail(dto.email);
+  }
+
+  @Post('me/resend-verification')
+  @SkipAudit()
+  @ApiBearerAuth('JWT-access')
+  @ApiOperation({
+    summary: 'Resend email verification link for the signed-in user',
+  })
+  @ApiOkResponse({ type: MessageResponseDto })
+  async resendVerificationForMe(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<MessageResponseDto> {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    return this.authService.resendVerificationForUser(request.user.sub);
   }
 
   @Post('refresh')

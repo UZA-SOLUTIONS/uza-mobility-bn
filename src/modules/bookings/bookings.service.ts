@@ -7,7 +7,6 @@ import {
 import {
   ListingStatus,
   NotificationType,
-  SellerType,
   VehicleBookingStatus,
 } from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
@@ -17,6 +16,11 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ACTIVE_INVOICE_STATUSES } from '../invoices/invoice.constants';
+import {
+  supersedeActiveBookingsForListing,
+  supersedeActiveInvoicesForListing,
+} from '../commerce/supersede.util';
+import { SUPERSEDED_BY_OTHER_BUYER_MESSAGE } from '../commerce/supersede.constants';
 import {
   ACTIVE_BOOKING_STATUSES,
   ADMIN_EDITABLE_BOOKING_FEE_STATUSES,
@@ -152,12 +156,6 @@ export class BookingsService {
       throw new NotFoundException('Listing not found');
     }
 
-    if (listing.sellerType !== SellerType.UZA_CHINA_SOURCING) {
-      throw new BadRequestException(
-        'Booking is only available for vehicles sourced from China',
-      );
-    }
-
     if (listing.status !== ListingStatus.PUBLISHED) {
       throw new BadRequestException('This vehicle is not available to book');
     }
@@ -166,17 +164,15 @@ export class BookingsService {
       throw new BadRequestException('This vehicle has already been booked');
     }
 
-    const blocking = await this.prisma.vehicleBooking.findFirst({
+    const confirmedBooking = await this.prisma.vehicleBooking.findFirst({
       where: {
         listingId: listing.id,
-        status: { in: [...ACTIVE_BOOKING_STATUSES] },
+        status: VehicleBookingStatus.CONFIRMED,
       },
     });
 
-    if (blocking) {
-      throw new BadRequestException(
-        'This vehicle already has an active booking',
-      );
+    if (confirmedBooking) {
+      throw new BadRequestException('This vehicle has already been booked');
     }
 
     const existingForUser = await this.prisma.vehicleBooking.findFirst({
@@ -190,19 +186,6 @@ export class BookingsService {
     if (existingForUser) {
       throw new BadRequestException(
         'You already have an active booking for this vehicle',
-      );
-    }
-
-    const activeInvoice = await this.prisma.invoice.findFirst({
-      where: {
-        listingId: listing.id,
-        status: { in: [...ACTIVE_INVOICE_STATUSES] },
-      },
-    });
-
-    if (activeInvoice) {
-      throw new BadRequestException(
-        'This vehicle already has an active invoice or reservation',
       );
     }
 
@@ -559,23 +542,36 @@ export class BookingsService {
       );
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.listing.update({
-        where: { id: booking.listingId },
-        data: { isBooked: true },
-      });
+    const { updated, supersededInvoices, supersededBookings } =
+      await this.prisma.$transaction(async (tx) => {
+        await tx.listing.update({
+          where: { id: booking.listingId },
+          data: { isBooked: true },
+        });
 
-      return tx.vehicleBooking.update({
-        where: { id: booking.id },
-        data: {
-          status: VehicleBookingStatus.CONFIRMED,
-          confirmedAt: new Date(),
-          verifiedBy: adminId,
-          verifiedAt: new Date(),
-        },
-        include: bookingInclude,
+        const supersededInvoices = await supersedeActiveInvoicesForListing(
+          tx,
+          booking.listingId,
+        );
+        const supersededBookings = await supersedeActiveBookingsForListing(
+          tx,
+          booking.listingId,
+          booking.id,
+        );
+
+        const confirmed = await tx.vehicleBooking.update({
+          where: { id: booking.id },
+          data: {
+            status: VehicleBookingStatus.CONFIRMED,
+            confirmedAt: new Date(),
+            verifiedBy: adminId,
+            verifiedAt: new Date(),
+          },
+          include: bookingInclude,
+        });
+
+        return { updated: confirmed, supersededInvoices, supersededBookings };
       });
-    });
 
     await this.notificationsService.send({
       userId: booking.userId,
@@ -584,6 +580,26 @@ export class BookingsService {
       body: `Your booking for ${updated.listing.listingTitle} is confirmed.`,
       metadata: { bookingId: booking.id, listingId: booking.listingId },
     });
+
+    for (const invoice of supersededInvoices) {
+      await this.notificationsService.send({
+        userId: invoice.userId,
+        type: NotificationType.SYSTEM_ALERT,
+        title: 'Vehicle no longer available',
+        body: `${SUPERSEDED_BY_OTHER_BUYER_MESSAGE} Invoice ${invoice.invoiceNumber} was cancelled.`,
+        metadata: { invoiceId: invoice.id, listingId: booking.listingId },
+      });
+    }
+
+    for (const rival of supersededBookings) {
+      await this.notificationsService.send({
+        userId: rival.userId,
+        type: NotificationType.SYSTEM_ALERT,
+        title: 'Vehicle no longer available',
+        body: `${SUPERSEDED_BY_OTHER_BUYER_MESSAGE} Booking ${rival.bookingNumber} was cancelled.`,
+        metadata: { bookingId: rival.id, listingId: booking.listingId },
+      });
+    }
 
     await this.auditService.record({
       userId: adminId,
