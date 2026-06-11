@@ -25,6 +25,7 @@ import {
   isStaffOnlyAccount,
   type AuthWorkspaceContext,
 } from './auth-workspace.util';
+import { normalizeAuthEmail } from './auth-email.util';
 import {
   generateRawToken,
   hashToken,
@@ -37,13 +38,13 @@ import type { SignOptions } from 'jsonwebtoken';
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password';
 
 const FORGOT_PASSWORD_MESSAGE =
-  'If an account exists for that email, we sent password reset instructions.';
+  'If this email is registered, we have sent you a link to reset your password. Please check your inbox and spam folder.';
 
 const RESEND_VERIFICATION_MESSAGE =
-  'If your account needs verification, we sent a new link to your email.';
+  'If this email is registered and still needs verification, we have sent a new link. Please check your inbox and spam folder.';
 
 const EMAIL_NOT_VERIFIED_MESSAGE =
-  'Please verify your email before signing in. Check your inbox or request a new verification link.';
+  'Your email is not verified yet. Please check your inbox for the verification email or request a new verification link.';
 
 @Injectable()
 export class AuthService {
@@ -63,11 +64,12 @@ export class AuthService {
     dto: RegisterDto,
     auditContext: RequestAuditContext = {},
   ): Promise<RegisterResponseDto> {
-    await this.usersService.ensureEmailIsAvailable(dto.email);
+    const email = normalizeAuthEmail(dto.email);
+    await this.usersService.ensureEmailIsAvailable(email);
 
     const passwordHash = this.hashPassword(dto.password);
     const createdUser = await this.usersService.createUser({
-      email: dto.email,
+      email,
       phone: dto.phone,
       passwordHash,
       firstName: dto.firstName,
@@ -86,7 +88,7 @@ export class AuthService {
 
     await this.prisma.inquiry.updateMany({
       where: {
-        email: dto.email.trim().toLowerCase(),
+        email,
         userId: null,
       },
       data: { userId: createdUser.id },
@@ -311,8 +313,9 @@ export class AuthService {
   }
 
   async forgotPassword(email: string): Promise<{ message: string }> {
+    const normalizedEmail = normalizeAuthEmail(email);
     const user = await this.prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
       include: {
         roles: { include: { role: true } },
         sellers: { select: { sellerType: true } },
@@ -394,7 +397,10 @@ export class AuthService {
   }
 
   async resendVerificationByEmail(email: string): Promise<{ message: string }> {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = normalizeAuthEmail(email);
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
 
     if (user && !user.isEmailVerified && user.isActive && !user.deletedAt) {
       await this.sendVerificationEmailForUser(user.id);
@@ -488,7 +494,7 @@ export class AuthService {
     } = {},
   ): Promise<AuthResponseDto> {
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+      where: { email: normalizeAuthEmail(dto.email) },
       include: {
         roles: {
           include: {
