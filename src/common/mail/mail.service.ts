@@ -132,11 +132,12 @@ export class MailService implements OnModuleInit {
     return buildBrandedEmailHtml({
       ...brand,
       headline: params.title,
-      bodyHtml: `<p style="margin: 0 0 18px">${escapeHtml(params.body)}</p>`,
+      bodyHtml: `<p style="margin: 0 0 12px">${escapeHtml(params.body)}</p>`,
       actionUrl: params.frontendUrl,
       actionLabel: params.actionLabel ?? `Open ${params.appName}`,
       infoBoxHtml:
-        '<strong>Need help?</strong><br />Our support team can assist with your account, orders, and mobility services.',
+        'Need help? Our support team can assist with your account, orders, and mobility services.',
+      footerReason: `You are receiving this email because you have an account or activity on ${params.appName}.`,
     });
   }
 
@@ -152,18 +153,19 @@ export class MailService implements OnModuleInit {
       recipientName: params.firstName,
       headline: 'Verify your email',
       bodyHtml: `
-        <p style="margin: 0 0 18px">
+        <p style="margin: 0 0 12px">
           Thank you for joining ${escapeHtml(params.appName)}. Please confirm your
-          email address to activate your account and access the marketplace.
+          email address to activate your account.
         </p>
-        <p style="margin: 0 0 18px">
-          This verification link expires in 24 hours. If you did not create an
-          account, you can safely ignore this email.
+        <p style="margin: 0 0 12px">
+          This link expires in 24 hours. If you did not create an account, you
+          can ignore this email.
         </p>`,
       actionUrl: params.verifyUrl,
-      actionLabel: 'Verify email',
+      actionLabel: 'Verify your email',
       infoBoxHtml:
-        '<strong>Did not receive this email?</strong><br />Check your spam folder or sign in and request a new verification link.',
+        'Did not receive this email? Check your spam folder or sign in and request a new verification link.',
+      footerReason: `You are receiving this email because you created an account on ${params.appName}. If you did not sign up, you can ignore this message.`,
     });
   }
 
@@ -179,18 +181,19 @@ export class MailService implements OnModuleInit {
       recipientName: params.firstName,
       headline: 'Reset your password',
       bodyHtml: `
-        <p style="margin: 0 0 18px">
-          We received a request to reset the password for your ${escapeHtml(params.appName)} account.
+        <p style="margin: 0 0 12px">
+          We received a request to reset the password for your
+          ${escapeHtml(params.appName)} account.
         </p>
-        <p style="margin: 0 0 18px">
-          Click the button below to choose a new password. This link expires in
-          1 hour. If you did not request a reset, you can ignore this email and
-          your password will stay the same.
+        <p style="margin: 0 0 12px">
+          Use the link below to choose a new password. It expires in 1 hour. If
+          you did not request a reset, ignore this email and your password will
+          stay the same.
         </p>`,
       actionUrl: params.resetUrl,
-      actionLabel: 'Reset password',
-      infoBoxHtml:
-        '<strong>Security tip</strong><br />Never share your password or this reset link with anyone.',
+      actionLabel: 'Reset your password',
+      infoBoxHtml: 'Never share your password or this reset link with anyone.',
+      footerReason: `You are receiving this email because a password reset was requested for your ${params.appName} account. If you did not request this, you can ignore this message.`,
     });
   }
 
@@ -198,7 +201,13 @@ export class MailService implements OnModuleInit {
     appName: string,
   ): Pick<
     BrandedEmailParams,
-    'appName' | 'tagline' | 'logoUrl' | 'websiteUrl' | 'supportUrl'
+    | 'appName'
+    | 'tagline'
+    | 'logoUrl'
+    | 'websiteUrl'
+    | 'supportUrl'
+    | 'companyLegalName'
+    | 'companyLocation'
   > {
     const frontendUrl = (
       this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
@@ -217,12 +226,22 @@ export class MailService implements OnModuleInit {
       this.configService.get<string>('MAIL_SUPPORT_URL') ??
       `${frontendUrl}/about`;
 
+    const companyLegalName =
+      this.configService.get<string>('MAIL_COMPANY_LEGAL_NAME') ??
+      'UZA Solutions Ltd';
+
+    const companyLocation =
+      this.configService.get<string>('MAIL_COMPANY_LOCATION') ??
+      'Kigali, Rwanda';
+
     return {
       appName,
       tagline,
       logoUrl,
       websiteUrl: frontendUrl,
       supportUrl,
+      companyLegalName,
+      companyLocation,
     };
   }
 

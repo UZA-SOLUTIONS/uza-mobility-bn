@@ -329,21 +329,25 @@ export class InquiriesService {
       recipientName: name.split(' ')[0] ?? name,
       headline: 'Your vehicle quote',
       bodyHtml: `
-        <p style="margin: 0 0 16px">Thank you for your interest in <strong>${escapeHtml(listing.listingTitle)}</strong>.</p>
-        <p style="margin: 0 0 16px">We received your inquiry and attached a reference quote (<strong>${escapeHtml(quoteNumber)}</strong>).</p>
-        <ul style="margin: 0 0 16px; padding-left: 20px; color: #356769;">
+        <p style="margin: 0 0 12px">Thank you for your interest in <strong>${escapeHtml(listing.listingTitle)}</strong>.</p>
+        <p style="margin: 0 0 12px">We received your inquiry and attached a reference quote (<strong>${escapeHtml(quoteNumber)}</strong>).</p>
+        <ul style="margin: 0 0 12px; padding-left: 18px; color: #424a53; font-size: 14px; line-height: 22px">
           <li>Vehicle: ${escapeHtml(listing.listingTitle)}</li>
           <li>Price: ${priceUsd != null ? `USD ${priceUsd.toLocaleString('en-US')}` : 'On request'}</li>
           <li>Delivery estimate: ${deliveryDays != null ? `${deliveryDays} days` : 'Confirmed at reservation'}</li>
           <li>Seller type: ${escapeHtml(listing.sellerType.replace(/_/g, ' '))}</li>
         </ul>
-        <p style="margin: 0 0 16px">Include quote number <strong>${escapeHtml(quoteNumber)}</strong> when you contact us. This vehicle is <strong>not reserved</strong> until payment is confirmed.</p>
+        <p style="margin: 0 0 12px">Include quote number <strong>${escapeHtml(quoteNumber)}</strong> when you contact us. This vehicle is <strong>not reserved</strong> until payment is confirmed.</p>
         <p style="margin: 0">Reply to this email or message us on WhatsApp to proceed.</p>`,
       actionUrl: whatsappUrl,
       actionLabel: 'Chat on WhatsApp',
       infoBoxHtml:
         'Your quote PDF is attached. Create a free account to track inquiries and save vehicles.',
-      tagline: 'Electric vehicle marketplace for Rwanda.',
+      footerReason: `You are receiving this email because you submitted a vehicle inquiry on ${appName}.`,
+      companyLegalName: company.legalName,
+      companyLocation:
+        this.configService.get<string>('MAIL_COMPANY_LOCATION') ??
+        'Kigali, Rwanda',
       logoUrl: `${frontendUrl}/images/FInal-logo.png`,
       websiteUrl: frontendUrl,
       supportUrl: `${frontendUrl}/inquiry/success?email=${encodeURIComponent(email)}`,
