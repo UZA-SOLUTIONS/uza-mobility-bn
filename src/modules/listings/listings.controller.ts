@@ -103,7 +103,9 @@ export class ListingsController {
 
   @Get('wishlist')
   @ApiBearerAuth('JWT-access')
-  @ApiOperation({ summary: 'Published listings saved to the signed-in user wishlist' })
+  @ApiOperation({
+    summary: 'Published listings saved to the signed-in user wishlist',
+  })
   wishlist(@Req() request: AuthenticatedRequest) {
     if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
@@ -233,10 +235,7 @@ export class ListingsController {
   @Post(':id/wishlist')
   @ApiBearerAuth('JWT-access')
   @ApiOperation({ summary: 'Save a published listing to wishlist' })
-  addToWishlist(
-    @Req() request: AuthenticatedRequest,
-    @Param('id') id: string,
-  ) {
+  addToWishlist(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     if (!request.user?.sub) {
       throw new UnauthorizedException('Unauthenticated');
     }

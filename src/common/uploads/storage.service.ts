@@ -140,7 +140,9 @@ export class StorageService implements OnModuleInit {
     };
   }
 
-  async readBufferByUrl(url: string | null | undefined): Promise<Buffer | null> {
+  async readBufferByUrl(
+    url: string | null | undefined,
+  ): Promise<Buffer | null> {
     const publicId = this.publicIdFromUrl(url);
     if (!publicId) return null;
 

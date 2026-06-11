@@ -4,10 +4,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Transporter } from 'nodemailer';
 import * as nodemailer from 'nodemailer';
-import {
-  EMAIL_LOGO_CID,
-  EMAIL_LOGO_FILENAME,
-} from './email-brand.constants';
+import { EMAIL_LOGO_CID, EMAIL_LOGO_FILENAME } from './email-brand.constants';
 import {
   buildBrandedEmailHtml,
   escapeHtml,
@@ -197,7 +194,9 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  private getEmailBrandDefaults(appName: string): Pick<
+  private getEmailBrandDefaults(
+    appName: string,
+  ): Pick<
     BrandedEmailParams,
     'appName' | 'tagline' | 'logoUrl' | 'websiteUrl' | 'supportUrl'
   > {
@@ -208,7 +207,7 @@ export class MailService implements OnModuleInit {
     const logoUrl = this.embeddedLogoPath
       ? `cid:${EMAIL_LOGO_CID}`
       : (this.configService.get<string>('MAIL_LOGO_URL') ??
-        `${frontendUrl}/images/FInal-logo-dashboard.png`);
+        `${frontendUrl}/images/FInal-logo.png`);
 
     const tagline =
       this.configService.get<string>('MAIL_TAGLINE') ??
@@ -230,8 +229,22 @@ export class MailService implements OnModuleInit {
   private resolveEmbeddedLogoPath(): string | null {
     const candidates = [
       join(__dirname, 'assets', EMAIL_LOGO_FILENAME),
-      join(process.cwd(), 'src', 'common', 'mail', 'assets', EMAIL_LOGO_FILENAME),
-      join(process.cwd(), 'dist', 'common', 'mail', 'assets', EMAIL_LOGO_FILENAME),
+      join(
+        process.cwd(),
+        'src',
+        'common',
+        'mail',
+        'assets',
+        EMAIL_LOGO_FILENAME,
+      ),
+      join(
+        process.cwd(),
+        'dist',
+        'common',
+        'mail',
+        'assets',
+        EMAIL_LOGO_FILENAME,
+      ),
     ];
 
     return candidates.find((path) => existsSync(path)) ?? null;

@@ -393,9 +393,7 @@ export class AuthService {
     return { message: 'Email verified successfully' };
   }
 
-  async resendVerificationByEmail(
-    email: string,
-  ): Promise<{ message: string }> {
+  async resendVerificationByEmail(email: string): Promise<{ message: string }> {
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     if (user && !user.isEmailVerified && user.isActive && !user.deletedAt) {
@@ -597,7 +595,8 @@ export class AuthService {
       },
     });
 
-    const appName = this.configService.get<string>('APP_NAME') ?? 'UZA Mobility';
+    const appName =
+      this.configService.get<string>('APP_NAME') ?? 'UZA Mobility';
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
     const verifyUrl = `${frontendUrl.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(rawToken)}`;
@@ -645,7 +644,8 @@ export class AuthService {
       },
     });
 
-    const appName = this.configService.get<string>('APP_NAME') ?? 'UZA Mobility';
+    const appName =
+      this.configService.get<string>('APP_NAME') ?? 'UZA Mobility';
     const marketplaceUrl =
       this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
     const adminUrl =

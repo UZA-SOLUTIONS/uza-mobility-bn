@@ -52,7 +52,9 @@ export class QuotePdfService {
     return { quotePdfUrl, pdfBuffer };
   }
 
-  async readPdfBuffer(quotePdfUrl: string | null | undefined): Promise<Buffer | null> {
+  async readPdfBuffer(
+    quotePdfUrl: string | null | undefined,
+  ): Promise<Buffer | null> {
     return this.quoteStorage.readQuotePdf(quotePdfUrl);
   }
 
@@ -274,7 +276,10 @@ export class QuotePdfService {
         { label: 'Vehicle price (FOB)', amount: p?.fobPriceUsd ?? totalUsd },
         { label: 'Estimated shipping', amount: p?.shippingCostUsd ?? 0 },
         { label: 'Local charges', amount: p?.localChargesUsd ?? 0 },
-        { label: 'Taxes and fees (estimate)', amount: p?.taxesEstimateUsd ?? 0 },
+        {
+          label: 'Taxes and fees (estimate)',
+          amount: p?.taxesEstimateUsd ?? 0,
+        },
         { label: 'Insurance (estimate)', amount: p?.insuranceUsd ?? 0 },
         {
           label: 'Clearing and declaration fee',

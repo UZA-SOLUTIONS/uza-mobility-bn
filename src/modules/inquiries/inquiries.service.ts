@@ -230,7 +230,9 @@ export class InquiriesService {
       throw new ForbiddenException('You do not have access to this quote');
     }
 
-    const buffer = await this.quotePdfService.readPdfBuffer(inquiry.quotePdfUrl);
+    const buffer = await this.quotePdfService.readPdfBuffer(
+      inquiry.quotePdfUrl,
+    );
     if (!buffer) {
       throw new NotFoundException('Quote document not found');
     }
@@ -312,7 +314,8 @@ export class InquiriesService {
     const frontendUrl = (
       this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
     ).replace(/\/$/, '');
-    const company = await this.platformSettingsService.getCompanyPaymentDetails();
+    const company =
+      await this.platformSettingsService.getCompanyPaymentDetails();
     const whatsappUrl = this.platformSettingsService.buildWhatsAppUrl(
       company.whatsappNumber,
       `Hello UZA Mobility, my quote reference is ${quoteNumber}`,
@@ -341,7 +344,7 @@ export class InquiriesService {
       infoBoxHtml:
         'Your quote PDF is attached. Create a free account to track inquiries and save vehicles.',
       tagline: 'Electric vehicle marketplace for Rwanda.',
-      logoUrl: `${frontendUrl}/images/FInal-logo-dashboard.png`,
+      logoUrl: `${frontendUrl}/images/FInal-logo.png`,
       websiteUrl: frontendUrl,
       supportUrl: `${frontendUrl}/inquiry/success?email=${encodeURIComponent(email)}`,
     });

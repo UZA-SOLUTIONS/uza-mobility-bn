@@ -80,7 +80,8 @@ export class AuthController {
   @Public()
   @SkipAudit()
   @ApiOperation({
-    summary: 'Start Google OAuth (redirects to Google — uses client secret on callback)',
+    summary:
+      'Start Google OAuth (redirects to Google — uses client secret on callback)',
   })
   startGoogleOAuth(
     @Query('returnTo') returnTo: string | undefined,
@@ -102,7 +103,9 @@ export class AuthController {
   @Get('google/callback')
   @Public()
   @SkipAudit()
-  @ApiOperation({ summary: 'Google OAuth callback — exchanges code with client secret' })
+  @ApiOperation({
+    summary: 'Google OAuth callback — exchanges code with client secret',
+  })
   async googleOAuthCallback(
     @Query('code') code: string | undefined,
     @Query('state') state: string | undefined,
@@ -152,10 +155,7 @@ export class AuthController {
     summary: 'Finish Google sign-in after OAuth callback redirect',
   })
   @ApiOkResponse({ type: AuthResponseDto })
-  completeGoogleOAuth(
-    @Body() dto: GoogleCompleteDto,
-    @Req() request: Request,
-  ) {
+  completeGoogleOAuth(@Body() dto: GoogleCompleteDto, @Req() request: Request) {
     const profile = this.googleOAuthService.consumePendingExchange(dto.code);
     return this.authService.loginWithGoogleProfile(
       profile,

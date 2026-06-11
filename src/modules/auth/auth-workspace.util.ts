@@ -58,7 +58,10 @@ const OPERATOR_WORKSPACE_PERMISSIONS = [
   'stations:read-own',
 ] as const;
 
-const SELLER_WORKSPACE_PERMISSIONS = ['listings:create', 'parts:create'] as const;
+const SELLER_WORKSPACE_PERMISSIONS = [
+  'listings:create',
+  'parts:create',
+] as const;
 
 export type AuthWorkspaceContext = {
   roleNames: string[];
@@ -143,5 +146,8 @@ export function hasMarketplaceWorkspace(ctx: AuthWorkspaceContext): boolean {
 
 /** Staff without buyer/seller/operator access on the marketplace app. */
 export function isStaffOnlyAccount(ctx: AuthWorkspaceContext): boolean {
-  return hasAdminAccess(ctx.roleNames, ctx.permissions) && !hasMarketplaceWorkspace(ctx);
+  return (
+    hasAdminAccess(ctx.roleNames, ctx.permissions) &&
+    !hasMarketplaceWorkspace(ctx)
+  );
 }

@@ -41,9 +41,9 @@ export class GoogleOAuthService {
   isConfigured(): boolean {
     return Boolean(
       this.getClientId() &&
-        this.getClientSecret() &&
-        this.getRedirectUri() &&
-        this.getFrontendUrl(),
+      this.getClientSecret() &&
+      this.getRedirectUri() &&
+      this.getFrontendUrl(),
     );
   }
 
@@ -83,7 +83,9 @@ export class GoogleOAuthService {
       });
       idToken = response.tokens.id_token;
     } catch {
-      throw new UnauthorizedException('Failed to exchange Google authorization code');
+      throw new UnauthorizedException(
+        'Failed to exchange Google authorization code',
+      );
     }
 
     if (!idToken) {
@@ -126,7 +128,9 @@ export class GoogleOAuthService {
 
     if (!pending || pending.expiresAt < Date.now()) {
       this.pendingExchanges.delete(hashed);
-      throw new UnauthorizedException('Google sign-in session expired or invalid');
+      throw new UnauthorizedException(
+        'Google sign-in session expired or invalid',
+      );
     }
 
     this.pendingExchanges.delete(hashed);

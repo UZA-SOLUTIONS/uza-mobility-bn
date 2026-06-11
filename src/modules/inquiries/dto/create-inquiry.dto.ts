@@ -9,10 +9,7 @@ import {
   MaxLength,
 } from 'class-validator';
 
-const INQUIRY_BUYER_TYPES = [
-  BuyerType.INDIVIDUAL,
-  BuyerType.BUSINESS,
-] as const;
+const INQUIRY_BUYER_TYPES = [BuyerType.INDIVIDUAL, BuyerType.BUSINESS] as const;
 
 export class CreateInquiryDto {
   @ApiProperty()
