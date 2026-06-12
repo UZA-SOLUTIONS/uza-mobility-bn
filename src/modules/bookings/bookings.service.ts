@@ -314,11 +314,14 @@ export class BookingsService {
       throw new ForbiddenException('You do not own this booking');
     }
 
-    if (
-      !BOOKING_PAYABLE_STATUSES.includes(
+    const canSubmitPayment =
+      BOOKING_PAYABLE_STATUSES.includes(
         booking.status as (typeof BOOKING_PAYABLE_STATUSES)[number],
-      )
-    ) {
+      ) ||
+      (booking.status === VehicleBookingStatus.REJECTED &&
+        Boolean(booking.rejectionReason));
+
+    if (!canSubmitPayment) {
       throw new BadRequestException(
         `Cannot submit payment for booking in status ${booking.status}`,
       );
@@ -346,6 +349,7 @@ export class BookingsService {
           senderName: dto.senderName,
           notes: dto.notes ?? booking.notes,
           status: VehicleBookingStatus.UNDER_VERIFICATION,
+          rejectionReason: null,
         },
         include: bookingInclude,
       });
@@ -472,7 +476,6 @@ export class BookingsService {
 
     const inactiveStatuses: VehicleBookingStatus[] = [
       VehicleBookingStatus.CANCELLED,
-      VehicleBookingStatus.REJECTED,
       VehicleBookingStatus.EXPIRED,
     ];
 
@@ -481,7 +484,19 @@ export class BookingsService {
       ...(filters.listingId ? { listingId: filters.listingId } : {}),
       ...(filters.status
         ? { status: filters.status }
-        : { status: { notIn: inactiveStatuses } }),
+        : {
+            OR: [
+              {
+                status: {
+                  notIn: [...inactiveStatuses, VehicleBookingStatus.REJECTED],
+                },
+              },
+              {
+                status: VehicleBookingStatus.REJECTED,
+                rejectionReason: { not: null },
+              },
+            ],
+          }),
     };
 
     const [items, total] = await Promise.all([
@@ -674,7 +689,10 @@ export class BookingsService {
       throw new NotFoundException('Booking not found');
     }
 
-    if (booking.status !== VehicleBookingStatus.UNDER_VERIFICATION) {
+    if (
+      booking.status !== VehicleBookingStatus.UNDER_VERIFICATION &&
+      booking.status !== VehicleBookingStatus.PAYMENT_SUBMITTED
+    ) {
       throw new BadRequestException(
         `Cannot reject booking in status ${booking.status}`,
       );
@@ -683,7 +701,7 @@ export class BookingsService {
     const updated = await this.prisma.vehicleBooking.update({
       where: { id: booking.id },
       data: {
-        status: VehicleBookingStatus.REJECTED,
+        status: VehicleBookingStatus.AWAITING_PAYMENT,
         rejectionReason: dto.reason,
         verifiedBy: adminId,
         verifiedAt: new Date(),
@@ -691,14 +709,14 @@ export class BookingsService {
       include: bookingInclude,
     });
 
+    const reasonText =
+      dto.reason ?? 'Your booking payment could not be verified.';
     await this.notificationsService.send({
       userId: booking.userId,
-      type: NotificationType.SYSTEM_ALERT,
-      title: 'Booking payment rejected',
-      body:
-        dto.reason ??
-        'Your booking payment could not be verified. Please contact support.',
-      metadata: { bookingId: booking.id },
+      type: NotificationType.PAYMENT_REJECTED,
+      title: 'Booking payment not verified',
+      body: `${reasonText} Please resubmit payment from My bookings.`,
+      metadata: { bookingId: booking.id, reason: dto.reason },
     });
 
     await this.auditService.record({

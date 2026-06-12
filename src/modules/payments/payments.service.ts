@@ -135,7 +135,42 @@ export class PaymentsService {
   }
 
   async findMine(userId: string, filters: FilterPaymentsDto) {
-    return this.findPaginated({ invoice: { userId } }, filters);
+    const where: Prisma.PaymentWhereInput = {
+      invoice: { userId },
+      ...(filters.status ? { status: filters.status } : {}),
+    };
+
+    const rows = await this.prisma.payment.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        invoice: {
+          select: {
+            invoiceNumber: true,
+            paymentReference: true,
+            totalAmountUsd: true,
+            status: true,
+          },
+        },
+        proofs: true,
+      },
+    });
+
+    const visible = this.filterSupersededRejectedPayments(rows);
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 25;
+    const skip = (page - 1) * limit;
+    const total = visible.length;
+
+    return {
+      items: visible.slice(skip, skip + limit),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
   }
 
   async adminFindAll(filters: FilterPaymentsDto) {
@@ -349,6 +384,26 @@ export class PaymentsService {
     });
 
     return this.getPaymentOrThrow(paymentId);
+  }
+
+  /** Hide rejected attempts once the buyer has submitted a newer payment for the same invoice. */
+  private filterSupersededRejectedPayments<
+    T extends { id: string; invoiceId: string; status: PaymentStatus },
+  >(payments: T[]): T[] {
+    const latestIdByInvoice = new Map<string, string>();
+
+    for (const payment of payments) {
+      if (!latestIdByInvoice.has(payment.invoiceId)) {
+        latestIdByInvoice.set(payment.invoiceId, payment.id);
+      }
+    }
+
+    return payments.filter((payment) => {
+      if (payment.status !== PaymentStatus.REJECTED) {
+        return true;
+      }
+      return latestIdByInvoice.get(payment.invoiceId) === payment.id;
+    });
   }
 
   private async findPaginated(

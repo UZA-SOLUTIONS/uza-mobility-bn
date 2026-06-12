@@ -270,6 +270,7 @@ export class InvoicesService {
     return this.findPaginated(
       this.buildInvoiceWhere({ userId }, filters),
       filters,
+      { includeRecentPayments: true },
     );
   }
 
@@ -548,6 +549,7 @@ export class InvoicesService {
   private async findPaginated(
     where: Prisma.InvoiceWhereInput,
     filters: FilterInvoicesDto,
+    options: { includeRecentPayments?: boolean } = {},
   ) {
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 25;
@@ -559,6 +561,16 @@ export class InvoicesService {
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
+        ...(options.includeRecentPayments
+          ? {
+              include: {
+                payments: {
+                  orderBy: { createdAt: 'desc' },
+                  take: 5,
+                },
+              },
+            }
+          : {}),
       }),
       this.prisma.invoice.count({ where }),
     ]);
