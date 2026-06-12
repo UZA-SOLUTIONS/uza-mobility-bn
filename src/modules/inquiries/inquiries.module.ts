@@ -22,6 +22,6 @@ import { QuoteStorageService } from './quote-storage.service';
   ],
   controllers: [InquiriesController, AdminInquiriesController],
   providers: [InquiriesService, QuotePdfService, QuoteStorageService],
-  exports: [InquiriesService],
+  exports: [InquiriesService, QuotePdfService],
 })
 export class InquiriesModule {}

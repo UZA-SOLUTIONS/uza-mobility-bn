@@ -1,12 +1,16 @@
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { Injectable, Logger } from '@nestjs/common';
-import { SellerType } from '@prisma/client';
+import { InquiryIntent, SellerType } from '@prisma/client';
 import { HtmlToPdfService } from '../../common/pdf/html-to-pdf.service';
+import { toAbsoluteUploadUrl } from '../../common/uploads/storage.paths';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { InquiryListingContext } from './inquiry.mapper';
 import { QuoteStorageService } from './quote-storage.service';
 
 const QUOTE_VALIDITY_DAYS = 30;
+const EMAIL_LOGO_FILENAME = 'FInal-logo-dashboard.png';
 
 export type GeneratedQuoteAsset = {
   quotePdfUrl: string;
@@ -27,6 +31,7 @@ export class QuotePdfService {
   async generate(
     inquiryId: string,
     quoteNumber: string,
+    intent: InquiryIntent,
     listing: InquiryListingContext,
     buyer: {
       name: string;
@@ -36,7 +41,7 @@ export class QuotePdfService {
       buyerType: string;
     },
   ): Promise<GeneratedQuoteAsset> {
-    const html = await this.renderHtml(quoteNumber, listing, buyer);
+    const html = await this.renderHtml(quoteNumber, intent, listing, buyer);
     const pdfBuffer = await this.htmlToPdf.render(html);
     const quotePdfUrl = await this.quoteStorage.saveQuotePdf(
       quoteNumber,
@@ -58,8 +63,26 @@ export class QuotePdfService {
     return this.quoteStorage.readQuotePdf(quotePdfUrl);
   }
 
+  /** Generate a quote/purchase PDF without persisting to an inquiry record. */
+  async generateBuffer(
+    referenceNumber: string,
+    intent: InquiryIntent,
+    listing: InquiryListingContext,
+    buyer: {
+      name: string;
+      email: string;
+      phone: string;
+      country: string;
+      buyerType: string;
+    },
+  ): Promise<Buffer> {
+    const html = await this.renderHtml(referenceNumber, intent, listing, buyer);
+    return this.htmlToPdf.render(html);
+  }
+
   private async renderHtml(
     quoteNumber: string,
+    intent: InquiryIntent,
     listing: InquiryListingContext,
     buyer: {
       name: string;
@@ -69,8 +92,11 @@ export class QuotePdfService {
       buyerType: string;
     },
   ): Promise<string> {
-    const company =
-      await this.platformSettingsService.getCompanyPaymentDetails();
+    const isBuy = intent === InquiryIntent.BUY;
+    const [company, bookingFeeUsd] = await Promise.all([
+      this.platformSettingsService.getCompanyPaymentDetails(),
+      this.platformSettingsService.getBookingFeeUsd(),
+    ]);
     const issuedAt = new Date();
     const validUntil = new Date(issuedAt);
     validUntil.setDate(validUntil.getDate() + QUOTE_VALIDITY_DAYS);
@@ -78,8 +104,10 @@ export class QuotePdfService {
     const pricing = listing.listingPricing;
     const totalUsd = pricing?.finalPriceUsd ?? 0;
     const delivery = this.deliverySummary(listing);
-    const priceRows = this.priceRows(listing, totalUsd);
+    const priceRows = this.priceRows(listing, totalUsd, isBuy, bookingFeeUsd);
     const ev = listing.evSpecs;
+    const logoDataUri = this.readLogoDataUri();
+    const vehicleImageDataUri = await this.resolveVehicleImageDataUri(listing);
 
     const formatMoney = (value: number) =>
       `USD ${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -95,6 +123,23 @@ export class QuotePdfService {
       .filter(Boolean)
       .join(' · ');
 
+    const docTitle = isBuy ? 'VEHICLE PURCHASE QUOTE' : 'VEHICLE BOOKING QUOTE';
+    const amountDueNow = isBuy ? totalUsd : bookingFeeUsd;
+    const amountDueLabel = isBuy
+      ? 'Amount due (full vehicle price)'
+      : 'Amount due now (booking fee)';
+    const paymentIntro = isBuy
+      ? `Transfer the <strong>full vehicle price (${formatMoney(totalUsd)})</strong> to proceed with your purchase.`
+      : `Pay the <strong>booking fee (${formatMoney(bookingFeeUsd)})</strong> to secure this vehicle. The remaining balance (${formatMoney(totalUsd)}) is due before delivery.`;
+
+    const vehicleImageHtml = vehicleImageDataUri
+      ? `<div class="vehicle-image"><img src="${vehicleImageDataUri}" alt="${this.escapeHtml(listing.listingTitle)}" /></div>`
+      : '';
+
+    const logoHtml = logoDataUri
+      ? `<img class="logo" src="${logoDataUri}" alt="${this.escapeHtml(company.legalName)}" />`
+      : `<strong>${this.escapeHtml(company.legalName)}</strong>`;
+
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -104,49 +149,57 @@ export class QuotePdfService {
     body { font-family: Arial, sans-serif; color: #151515; margin: 32px; font-size: 13px; }
     h1 { color: #174438; margin: 0; font-size: 22px; }
     .muted { color: #356769; }
-    .header { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+    .header { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 24px; align-items: flex-start; }
+    .logo { height: 48px; width: auto; display: block; }
+    .vehicle-image { margin-bottom: 16px; }
+    .vehicle-image img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 8px; border: 1px solid #e9e9e9; }
     .box { border: 1px solid #e9e9e9; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
     .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     th, td { border: 1px solid #e9e9e9; padding: 10px; text-align: left; vertical-align: top; }
     th { background: #f8faf9; }
     .total { background: #d4e157; font-weight: bold; }
+    .due-now { background: #174438; color: #fff; font-weight: bold; }
     .payment { background: #e8f4fc; padding: 16px; border-radius: 8px; margin: 16px 0; }
     .valid { color: #c0392b; font-weight: 600; }
     ul { margin: 8px 0 0 18px; padding: 0; }
     li { margin-bottom: 6px; }
     .footer { margin-top: 24px; font-size: 12px; color: #356769; display: flex; justify-content: space-between; }
+    .intent-badge { display: inline-block; background: #174438; color: #fff; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; padding: 4px 10px; border-radius: 999px; margin-bottom: 8px; text-transform: uppercase; }
   </style>
 </head>
 <body>
   <div class="header">
     <div>
-      <strong>${company.legalName}</strong><br />
-      <span class="muted">Kigali, Rwanda</span><br />
-      <span class="muted">info@uzamobility.com</span>
+      ${logoHtml}
+      <div class="muted" style="margin-top: 8px">Kigali, Rwanda</div>
+      <div class="muted">info@uzamobility.com</div>
     </div>
     <div style="text-align:right">
-      <h1>VEHICLE QUOTE</h1>
+      <div class="intent-badge">${isBuy ? 'Purchase' : 'Booking'}</div>
+      <h1>${docTitle}</h1>
       <div><strong>${quoteNumber}</strong></div>
       <div>Issue date: ${issuedAt.toLocaleDateString('en-GB')}</div>
       <div class="valid">Valid until: ${validUntil.toLocaleDateString('en-GB')}</div>
     </div>
   </div>
 
+  ${vehicleImageHtml}
+
   <div class="cols">
     <div class="box">
       <strong>Prepared for</strong><br />
-      ${buyer.name}<br />
-      ${buyer.email}<br />
-      ${buyer.phone}<br />
-      ${buyer.buyerType.replace(/_/g, ' ')} · ${buyer.country}
+      ${this.escapeHtml(buyer.name)}<br />
+      ${this.escapeHtml(buyer.email)}<br />
+      ${this.escapeHtml(buyer.phone)}<br />
+      ${this.escapeHtml(buyer.buyerType.replace(/_/g, ' '))} · ${this.escapeHtml(buyer.country)}
     </div>
     <div class="box">
       <strong>Shipment &amp; delivery</strong><br />
-      Seller type: ${listing.sellerType.replace(/_/g, ' ')}<br />
-      Origin: ${delivery.origin}<br />
-      Destination: ${delivery.destination}<br />
-      Timeline: ${delivery.timeline}<br />
+      Seller: ${this.escapeHtml(listing.sellerType.replace(/_/g, ' '))}<br />
+      Origin: ${this.escapeHtml(delivery.origin)}<br />
+      Destination: ${this.escapeHtml(delivery.destination)}<br />
+      Timeline: ${this.escapeHtml(delivery.timeline)}<br />
       Payment: TT bank transfer
     </div>
   </div>
@@ -166,11 +219,11 @@ export class QuotePdfService {
       <tr>
         <td>${listing.id.slice(-8).toUpperCase()}</td>
         <td>
-          <strong>${listing.listingTitle}</strong><br />
-          <span class="muted">${listing.brand} ${listing.model} ${listing.manufacturingYear}</span><br />
-          <span class="muted">${specLine || '—'}</span>
+          <strong>${this.escapeHtml(listing.listingTitle)}</strong><br />
+          <span class="muted">${this.escapeHtml(listing.brand)} ${this.escapeHtml(listing.model)} ${listing.manufacturingYear}</span><br />
+          <span class="muted">${this.escapeHtml(specLine || '—')}</span>
         </td>
-        <td>${listing.isNew ? 'New' : listing.condition.replace(/_/g, ' ')}</td>
+        <td>${listing.isNew ? 'New' : this.escapeHtml(listing.condition.replace(/_/g, ' '))}</td>
         <td>1</td>
         <td>${formatMoney(totalUsd)}</td>
         <td>${formatMoney(totalUsd)}</td>
@@ -185,7 +238,7 @@ export class QuotePdfService {
         ${priceRows
           .map(
             (row) =>
-              `<tr${row.total ? ' class="total"' : ''}><td colspan="5">${row.label}</td><td>${formatMoney(row.amount)}</td></tr>`,
+              `<tr class="${row.dueNow ? 'due-now' : row.total ? 'total' : ''}"><td colspan="5">${row.label}</td><td>${formatMoney(row.amount)}</td></tr>`,
           )
           .join('')}
       </tbody>
@@ -194,10 +247,12 @@ export class QuotePdfService {
 
   <div class="payment">
     <strong>Payment instructions</strong><br />
-    Beneficiary: ${company.legalName}<br />
-    Bank: ${company.bankName}<br />
-    Account: ${company.accountNumber}<br />
+    <p style="margin: 8px 0">${paymentIntro}</p>
+    Beneficiary: ${this.escapeHtml(company.legalName)}<br />
+    Bank: ${this.escapeHtml(company.bankName)}<br />
+    Account: ${this.escapeHtml(company.accountNumber)}<br />
     Currency: USD<br />
+    <strong>${amountDueLabel}: ${formatMoney(amountDueNow)}</strong><br />
     <strong>Payment reference: ${quoteNumber}</strong> (include in your transfer)<br />
     Method: TT bank transfer only
   </div>
@@ -205,7 +260,13 @@ export class QuotePdfService {
   <div class="box">
     <strong>Terms &amp; notes</strong>
     <ul>
-      <li>This quote is for reference only. The vehicle is not reserved until payment is confirmed and a Proforma Invoice is issued.</li>
+      ${
+        isBuy
+          ? `<li>This document is for your purchase request. The vehicle is not reserved until full payment is confirmed and a Proforma Invoice is issued.</li>
+      <li>Transfer the full quoted vehicle price using the bank details above.</li>`
+          : `<li>This document is for your booking request. The vehicle is not reserved until the booking fee is confirmed.</li>
+      <li>Pay the booking fee first to secure the vehicle. The remaining balance is due before delivery.</li>`
+      }
       <li>Pricing is an estimate. Shipping, taxes, and local charges may vary. Final figures appear on the Proforma Invoice.</li>
       <li>All bank transfer charges are borne by the buyer.</li>
       <li>To proceed, reply to your confirmation email or contact us on WhatsApp with your quote number.</li>
@@ -215,11 +276,78 @@ export class QuotePdfService {
   </div>
 
   <div class="footer">
-    <span>${company.legalName} · Kigali, Rwanda</span>
+    <span>${this.escapeHtml(company.legalName)} · Kigali, Rwanda</span>
     <span>Generated automatically — contact our team for questions.</span>
   </div>
 </body>
 </html>`;
+  }
+
+  private readLogoDataUri(): string | null {
+    const candidates = [
+      join(__dirname, '../../common/mail/assets', EMAIL_LOGO_FILENAME),
+      join(process.cwd(), 'src/common/mail/assets', EMAIL_LOGO_FILENAME),
+      join(process.cwd(), 'dist/common/mail/assets', EMAIL_LOGO_FILENAME),
+    ];
+
+    for (const filePath of candidates) {
+      if (!existsSync(filePath)) continue;
+      try {
+        const buffer = readFileSync(filePath);
+        return `data:image/png;base64,${buffer.toString('base64')}`;
+      } catch (error) {
+        this.logger.warn(`Could not read logo at ${filePath}`, error);
+      }
+    }
+
+    return null;
+  }
+
+  private resolvePrimaryPhotoUrl(
+    listing: InquiryListingContext,
+  ): string | null {
+    const photos = listing.photos ?? [];
+    if (!photos.length) return null;
+
+    const primary =
+      photos.find((photo) => photo.isPrimary) ??
+      [...photos].sort((a, b) => a.displayOrder - b.displayOrder)[0];
+
+    return toAbsoluteUploadUrl(primary.url);
+  }
+
+  private async resolveVehicleImageDataUri(
+    listing: InquiryListingContext,
+  ): Promise<string | null> {
+    const photoUrl = this.resolvePrimaryPhotoUrl(listing);
+    if (!photoUrl) return null;
+
+    try {
+      const response = await fetch(photoUrl);
+      if (!response.ok) {
+        this.logger.warn(
+          `Vehicle image fetch failed (${response.status}) for ${photoUrl}`,
+        );
+        return photoUrl;
+      }
+
+      const contentType =
+        response.headers.get('content-type')?.split(';')[0]?.trim() ||
+        'image/jpeg';
+      const buffer = Buffer.from(await response.arrayBuffer());
+      return `data:${contentType};base64,${buffer.toString('base64')}`;
+    } catch (error) {
+      this.logger.warn(`Vehicle image fetch error for ${photoUrl}`, error);
+      return photoUrl;
+    }
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   private deliverySummary(listing: InquiryListingContext) {
@@ -266,13 +394,27 @@ export class QuotePdfService {
   private priceRows(
     listing: InquiryListingContext,
     totalUsd: number,
-  ): Array<{ label: string; amount: number; total?: boolean }> {
+    isBuy: boolean,
+    bookingFeeUsd: number,
+  ): Array<{
+    label: string;
+    amount: number;
+    total?: boolean;
+    dueNow?: boolean;
+  }> {
     const p = listing.listingPricing;
+    const rows: Array<{
+      label: string;
+      amount: number;
+      total?: boolean;
+      dueNow?: boolean;
+    }> = [];
+
     if (
       listing.sellerType === SellerType.UZA_CHINA_SOURCING ||
       listing.sellerType === SellerType.INTERNATIONAL_SELLER
     ) {
-      return [
+      rows.push(
         { label: 'Vehicle price (FOB)', amount: p?.fobPriceUsd ?? totalUsd },
         { label: 'Estimated shipping', amount: p?.shippingCostUsd ?? 0 },
         { label: 'Local charges', amount: p?.localChargesUsd ?? 0 },
@@ -287,19 +429,41 @@ export class QuotePdfService {
         },
         { label: 'Estimated landing cost', amount: p?.landingCostUsd ?? 0 },
         { label: 'UZA service margin', amount: p?.marginUsd ?? 0 },
-        { label: 'TOTAL QUOTED PRICE', amount: totalUsd, total: true },
-      ];
-    }
-
-    if (listing.sellerType === SellerType.UZA_RWANDA_STOCK) {
+        { label: 'TOTAL VEHICLE PRICE', amount: totalUsd, total: true },
+      );
+    } else if (listing.sellerType === SellerType.UZA_RWANDA_STOCK) {
       const discount = p?.discountUsd ?? 0;
-      return [
-        { label: 'Vehicle price', amount: totalUsd + discount },
-        ...(discount > 0 ? [{ label: 'Discount', amount: -discount }] : []),
-        { label: 'TOTAL QUOTED PRICE', amount: totalUsd, total: true },
-      ];
+      rows.push({ label: 'Vehicle price', amount: totalUsd + discount });
+      if (discount > 0) {
+        rows.push({ label: 'Discount', amount: -discount });
+      }
+      rows.push({
+        label: 'TOTAL VEHICLE PRICE',
+        amount: totalUsd,
+        total: true,
+      });
+    } else {
+      rows.push({ label: 'Vehicle price', amount: totalUsd, total: true });
     }
 
-    return [{ label: 'Marketplace price', amount: totalUsd, total: true }];
+    if (isBuy) {
+      rows.push({
+        label: 'AMOUNT DUE (FULL PURCHASE)',
+        amount: totalUsd,
+        dueNow: true,
+      });
+    } else {
+      rows.push({
+        label: 'Booking fee (pay now to confirm)',
+        amount: bookingFeeUsd,
+      });
+      rows.push({
+        label: 'AMOUNT DUE NOW (BOOKING FEE)',
+        amount: bookingFeeUsd,
+        dueNow: true,
+      });
+    }
+
+    return rows;
   }
 }

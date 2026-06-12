@@ -3,17 +3,30 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { FleetRequestStatus, NotificationType, Prisma } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import {
+  BuyerType,
+  FleetRequestStatus,
+  NotificationType,
+  Prisma,
+} from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
+import { MailService } from '../../common/mail/mail.service';
+import {
+  buildBrandedEmailHtml,
+  escapeHtml,
+} from '../../common/mail/email-template.util';
+import { generateReferenceNumber } from '../../common/utils/reference-number.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AddAssociationMemberDto } from './dto/add-association-member.dto';
 import { CreateAssociationDto } from './dto/create-association.dto';
 import { CreateFleetRequestDto } from './dto/create-fleet-request.dto';
 import { FilterFleetRequestsDto } from './dto/filter-fleet.dto';
 import { UpdateFleetRequestStatusDto } from './dto/update-fleet-request.dto';
-import { FLEET_GUEST_EMAIL } from './fleet.constants';
+import { FleetRequestPdfService } from './fleet-request-pdf.service';
 import { canFleetTransition } from './fleet-transitions';
 
 @Injectable()
@@ -22,19 +35,44 @@ export class FleetService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly auditService: AuditService,
+    private readonly fleetRequestPdfService: FleetRequestPdfService,
+    private readonly mailService: MailService,
+    private readonly platformSettingsService: PlatformSettingsService,
+    private readonly configService: ConfigService,
   ) {}
 
   async submitRequest(dto: CreateFleetRequestDto, userId?: string) {
-    const ownerId = await this.resolveUserId(userId);
+    const email = dto.email.trim().toLowerCase();
+    const buyerType = dto.buyerType ?? BuyerType.BUSINESS;
+    const referenceNumber = await generateReferenceNumber(
+      this.prisma,
+      'UZM-FLT',
+    );
+
+    const [vehicleCategory, vehicleSubcategory] = await Promise.all([
+      dto.vehicleCategoryId
+        ? this.prisma.category.findUnique({
+            where: { id: dto.vehicleCategoryId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+      dto.vehicleSubcategoryId
+        ? this.prisma.subcategory.findUnique({
+            where: { id: dto.vehicleSubcategoryId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+    ]);
 
     const request = await this.prisma.fleetRequest.create({
       data: {
-        userId: ownerId,
-        organizationName: dto.organizationName,
-        contactPerson: dto.contactPerson,
-        phone: dto.phone,
-        email: dto.email,
-        buyerType: dto.buyerType,
+        referenceNumber,
+        userId: userId ?? null,
+        organizationName: dto.organizationName.trim(),
+        contactPerson: dto.contactPerson.trim(),
+        phone: dto.phone.trim(),
+        email,
+        buyerType,
         vehicleCategoryId: dto.vehicleCategoryId,
         vehicleSubcategoryId: dto.vehicleSubcategoryId,
         quantity: dto.quantity,
@@ -45,10 +83,40 @@ export class FleetService {
         financingRequested: dto.financingRequested ?? false,
         chargingSupportRequested: dto.chargingSupportRequested ?? false,
         associationId: dto.associationId,
-        notes: dto.notes,
+        notes: dto.notes?.trim(),
         status: FleetRequestStatus.SUBMITTED,
       },
     });
+
+    const { summaryPdfUrl, pdfBuffer } =
+      await this.fleetRequestPdfService.generate({
+        referenceNumber,
+        organizationName: request.organizationName,
+        contactPerson: request.contactPerson,
+        email: request.email,
+        phone: request.phone,
+        buyerType: request.buyerType,
+        quantity: request.quantity,
+        vehicleCategoryName: vehicleCategory?.name,
+        vehicleSubcategoryName: vehicleSubcategory?.name,
+        useCase: request.useCase,
+        notes: request.notes,
+      });
+
+    await this.prisma.fleetRequest.update({
+      where: { id: request.id },
+      data: { summaryPdfUrl },
+    });
+
+    await this.sendRequesterConfirmationEmail(
+      request.contactPerson,
+      email,
+      request.organizationName,
+      referenceNumber,
+      request.quantity,
+      vehicleCategory?.name,
+      pdfBuffer,
+    );
 
     await this.notificationsService.sendToRoleNames(
       ['FLEET_ADMIN', 'SUPER_ADMIN'],
@@ -56,11 +124,15 @@ export class FleetService {
         type: NotificationType.FLEET_REQUEST_UPDATE,
         title: 'New fleet request',
         body: `${dto.organizationName} requested ${dto.quantity} vehicle(s).`,
-        metadata: { fleetRequestId: request.id },
+        metadata: { fleetRequestId: request.id, referenceNumber },
       },
     );
 
-    return this.toPublicFleetRequest(request);
+    return {
+      ...this.toPublicFleetRequest({ ...request, summaryPdfUrl }),
+      referenceNumber,
+      email,
+    };
   }
 
   async findMine(userId: string, filters: FilterFleetRequestsDto) {
@@ -84,7 +156,26 @@ export class FleetService {
       throw new NotFoundException('Fleet request not found');
     }
 
-    return request;
+    const [vehicleCategory, vehicleSubcategory] = await Promise.all([
+      request.vehicleCategoryId
+        ? this.prisma.category.findUnique({
+            where: { id: request.vehicleCategoryId },
+            select: { id: true, name: true, slug: true },
+          })
+        : Promise.resolve(null),
+      request.vehicleSubcategoryId
+        ? this.prisma.category.findUnique({
+            where: { id: request.vehicleSubcategoryId },
+            select: { id: true, name: true, slug: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      ...request,
+      vehicleCategory,
+      vehicleSubcategory,
+    };
   }
 
   async updateStatus(
@@ -119,13 +210,15 @@ export class FleetService {
       },
     });
 
-    await this.notificationsService.send({
-      userId: request.userId,
-      type: NotificationType.FLEET_REQUEST_UPDATE,
-      title: 'Fleet request updated',
-      body: `Your fleet request for ${request.organizationName} is now ${dto.status}.`,
-      metadata: { fleetRequestId: id, status: dto.status },
-    });
+    if (request.userId) {
+      await this.notificationsService.send({
+        userId: request.userId,
+        type: NotificationType.FLEET_REQUEST_UPDATE,
+        title: 'Fleet request updated',
+        body: `Your fleet request for ${request.organizationName} is now ${dto.status}.`,
+        metadata: { fleetRequestId: id, status: dto.status },
+      });
+    }
 
     await this.auditService.record({
       userId: adminUserId,
@@ -187,6 +280,8 @@ export class FleetService {
         { organizationName: { contains: filters.q, mode: 'insensitive' } },
         { contactPerson: { contains: filters.q, mode: 'insensitive' } },
         { phone: { contains: filters.q, mode: 'insensitive' } },
+        { email: { contains: filters.q, mode: 'insensitive' } },
+        { referenceNumber: { contains: filters.q, mode: 'insensitive' } },
       ];
     }
 
@@ -227,24 +322,6 @@ export class FleetService {
     return rest;
   }
 
-  private async resolveUserId(userId?: string): Promise<string> {
-    if (userId) {
-      return userId;
-    }
-
-    const guest = await this.prisma.user.findUnique({
-      where: { email: FLEET_GUEST_EMAIL },
-    });
-
-    if (!guest) {
-      throw new NotFoundException(
-        `Fleet guest user (${FLEET_GUEST_EMAIL}) is missing — run prisma:seed`,
-      );
-    }
-
-    return guest.id;
-  }
-
   private async getAssociationOrThrow(id: string) {
     const association = await this.prisma.association.findUnique({
       where: { id },
@@ -255,5 +332,67 @@ export class FleetService {
     }
 
     return association;
+  }
+
+  private async sendRequesterConfirmationEmail(
+    contactPerson: string,
+    email: string,
+    organizationName: string,
+    referenceNumber: string,
+    quantity: number,
+    vehicleCategoryName: string | undefined,
+    pdfBuffer: Buffer,
+  ) {
+    const appName =
+      this.configService.get<string>('APP_NAME') ?? 'UZA Mobility';
+    const frontendUrl = (
+      this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
+    ).replace(/\/$/, '');
+    const company =
+      await this.platformSettingsService.getCompanyPaymentDetails();
+    const whatsappUrl = this.platformSettingsService.buildWhatsAppUrl(
+      company.whatsappNumber,
+      `Hello UZA Mobility, my fleet request reference is ${referenceNumber}`,
+    );
+    const vehicleInterest = vehicleCategoryName ?? 'your selected category';
+    const firstName = contactPerson.split(' ')[0] ?? contactPerson;
+
+    const html = buildBrandedEmailHtml({
+      appName,
+      recipientName: firstName,
+      headline: 'We received your fleet request',
+      bodyHtml: `
+        <p style="margin: 0 0 12px">Thank you for reaching out, ${escapeHtml(organizationName)}.</p>
+        <p style="margin: 0 0 12px">We received your request for ${quantity} vehicle(s) and attached a summary document (${escapeHtml(referenceNumber)}).</p>
+        <ul style="margin: 0 0 12px; padding-left: 18px; color: #424a53; font-size: 14px; line-height: 22px">
+          <li>Primary interest: ${escapeHtml(vehicleInterest)}</li>
+          <li>Reference: ${escapeHtml(referenceNumber)}</li>
+        </ul>
+        <p style="margin: 0 0 12px">Our commercial team will contact you within 24 hours to discuss sourcing, financing, and charging infrastructure for your fleet.</p>
+        <p style="margin: 0">Pricing is not included in this email. A dedicated advisor will share commercial terms after reviewing your requirements.</p>`,
+      actionUrl: whatsappUrl,
+      actionLabel: 'Chat on WhatsApp',
+      footerReason: `You are receiving this email because you submitted a fleet request on ${appName}.`,
+      companyLegalName: company.legalName,
+      companyLocation:
+        this.configService.get<string>('MAIL_COMPANY_LOCATION') ??
+        'Kigali, Rwanda',
+      logoUrl: '',
+      websiteUrl: frontendUrl,
+      supportUrl: `${frontendUrl}/for-business`,
+    });
+
+    await this.mailService.sendMail({
+      to: email,
+      subject: `Fleet request received — ${referenceNumber}`,
+      html,
+      text: `Thank you ${contactPerson}. We received your fleet request ${referenceNumber} for ${quantity} vehicle(s). Our team will contact you within 24 hours. Pricing is not included — a dedicated advisor will follow up.`,
+      bufferAttachments: [
+        {
+          filename: `${referenceNumber}.pdf`,
+          content: pdfBuffer,
+        },
+      ],
+    });
   }
 }

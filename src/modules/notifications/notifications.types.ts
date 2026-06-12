@@ -19,6 +19,7 @@ export interface SendNotificationInput {
   skipRealtime?: boolean;
   emailSubject?: string;
   emailHtml?: string;
+  emailAttachments?: Array<{ filename: string; content: Buffer }>;
 }
 
 export type NotificationPayload = Pick<

@@ -820,11 +820,17 @@ enum InquiryStatus {
   CLOSED
 }
 
+enum InquiryIntent {
+  BUY
+  BOOK
+}
+
 model Inquiry {
   id            String        @id @default(cuid())
   quoteNumber   String        @unique
   userId        String?
   listingId     String?
+  intent        InquiryIntent @default(BOOK)
   name          String
   phone         String
   email         String
@@ -1016,13 +1022,15 @@ model AssociationMember {
 
 model FleetRequest {
   id                       String             @id @default(cuid())
-  userId                   String
+  referenceNumber          String             @unique
+  summaryPdfUrl            String?
+  userId                   String?
   associationId            String?
   status                   FleetRequestStatus @default(SUBMITTED)
   organizationName         String
   contactPerson            String
   phone                    String
-  email                    String?
+  email                    String
   buyerType                BuyerType
   vehicleCategoryId        String?
   vehicleSubcategoryId     String?
@@ -1039,9 +1047,10 @@ model FleetRequest {
   createdAt                DateTime           @default(now())
   updatedAt                DateTime           @updatedAt
 
-  user                     User               @relation(fields: [userId], references: [id])
+  user                     User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
   association              Association?       @relation(fields: [associationId], references: [id])
 
+  @@index([email])
   @@map("fleet_requests")
 }
 

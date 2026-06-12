@@ -193,7 +193,7 @@ export class PaymentsService {
           if (listing && canTransition(listing.status, ListingStatus.SOLD)) {
             await tx.listing.update({
               where: { id: listingId },
-              data: { status: ListingStatus.SOLD },
+              data: { status: ListingStatus.SOLD, isBooked: false },
             });
           }
 

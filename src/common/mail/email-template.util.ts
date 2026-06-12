@@ -65,29 +65,17 @@ export function buildBrandedEmailHtml(params: BrandedEmailParams): string {
   const ctaBlock =
     params.actionUrl && params.actionLabel
       ? `
-                <p style="margin: 16px 0 8px; font-size: 14px; line-height: 22px">
+                <p style="margin: 16px 0 0; font-size: 14px; line-height: 22px">
                   <a
                     href="${params.actionUrl}"
                     target="_blank"
                     style="
                       color: ${EMAIL_BRAND.link};
-                      font-weight: 600;
                       text-decoration: underline;
                     "
                   >
                     ${escapeHtml(params.actionLabel)}
                   </a>
-                </p>
-                <p
-                  style="
-                    margin: 0;
-                    font-size: 12px;
-                    line-height: 18px;
-                    color: ${EMAIL_BRAND.textMuted};
-                    word-break: break-all;
-                  "
-                >
-                  ${escapeHtml(params.actionUrl)}
                 </p>`
       : '';
 
@@ -145,17 +133,7 @@ export function buildBrandedEmailHtml(params: BrandedEmailParams): string {
             "
           >
             <tr>
-              <td align="center" style="padding: 24px 24px 16px">
-                <img
-                  src="${params.logoUrl}"
-                  alt="${escapeHtml(params.appName)}"
-                  width="140"
-                  style="display: block; max-width: 100%; height: auto"
-                />
-              </td>
-            </tr>
-            <tr>
-              <td style="padding: 0 24px 24px">
+              <td style="padding: 24px 24px 24px">
                 <p
                   style="
                     margin: 0 0 8px;
@@ -171,7 +149,7 @@ export function buildBrandedEmailHtml(params: BrandedEmailParams): string {
                     margin: 0 0 16px;
                     font-size: 20px;
                     line-height: 28px;
-                    font-weight: 600;
+                    font-weight: 500;
                     color: ${EMAIL_BRAND.text};
                   "
                 >

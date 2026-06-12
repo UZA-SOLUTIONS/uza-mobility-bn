@@ -28,10 +28,13 @@ export function toAdminInquiry(row: InquiryWithListing) {
   return row;
 }
 
+export const inquiryListingInclude = {
+  listingPricing: true,
+  evSpecs: true,
+  photos: { orderBy: { displayOrder: 'asc' as const } },
+  seller: { select: { businessName: true, city: true, country: true } },
+} as const;
+
 export type InquiryListingContext = Prisma.ListingGetPayload<{
-  include: {
-    listingPricing: true;
-    evSpecs: true;
-    seller: { select: { businessName: true; city: true; country: true } };
-  };
+  include: typeof inquiryListingInclude;
 }>;

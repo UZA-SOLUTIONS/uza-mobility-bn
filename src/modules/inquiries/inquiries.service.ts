@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
+  InquiryIntent,
   InquiryStatus,
   ListingStatus,
   NotificationType,
@@ -12,8 +14,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { generateReferenceNumber } from '../../common/utils/reference-number.util';
 import { MailService } from '../../common/mail/mail.service';
-import { escapeHtml } from '../../common/mail/email-template.util';
-import { buildBrandedEmailHtml } from '../../common/mail/email-template.util';
+import { buildCommerceConfirmationEmail } from '../../common/mail/commerce-confirmation-email.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -23,15 +24,10 @@ import { UpdateInquiryStatusDto } from './dto/update-inquiry-status.dto';
 import {
   toAdminInquiry,
   toBuyerInquiry,
+  inquiryListingInclude,
   type InquiryListingContext,
 } from './inquiry.mapper';
 import { QuotePdfService } from './quote-pdf.service';
-
-const listingInclude = {
-  listingPricing: true,
-  evSpecs: true,
-  seller: { select: { businessName: true, city: true, country: true } },
-} as const;
 
 @Injectable()
 export class InquiriesService {
@@ -51,24 +47,43 @@ export class InquiriesService {
         status: ListingStatus.PUBLISHED,
         deletedAt: null,
       },
-      include: listingInclude,
+      include: inquiryListingInclude,
     });
 
     if (!listing) {
+      const unavailable = await this.prisma.listing.findFirst({
+        where: { id: dto.listingId, deletedAt: null },
+        select: { status: true, isBooked: true },
+      });
+
+      if (unavailable?.status === ListingStatus.SOLD) {
+        throw new BadRequestException('This vehicle has been sold');
+      }
+
+      if (unavailable?.isBooked) {
+        throw new BadRequestException('This vehicle has already been booked');
+      }
+
       throw new NotFoundException('Published listing not found');
+    }
+
+    if (listing.isBooked) {
+      throw new BadRequestException('This vehicle has already been booked');
     }
 
     const email = dto.email.trim().toLowerCase();
     const quoteNumber = await generateReferenceNumber(this.prisma, 'UZM-QUO');
 
+    const intent = dto.intent ?? InquiryIntent.BOOK;
     const defaultMessage =
       dto.message?.trim() ||
-      `Inquiry for ${listing.listingTitle} (ref ${listing.id.slice(-8).toUpperCase()})`;
+      `${intent === InquiryIntent.BUY ? 'Purchase' : 'Booking'} inquiry for ${listing.listingTitle} (ref ${listing.id.slice(-8).toUpperCase()})`;
 
     const inquiry = await this.prisma.inquiry.create({
       data: {
         quoteNumber,
         listingId: listing.id,
+        intent,
         name: dto.name.trim(),
         phone: dto.phone.trim(),
         email,
@@ -94,6 +109,7 @@ export class InquiriesService {
     const { pdfBuffer } = await this.quotePdfService.generate(
       inquiry.id,
       quoteNumber,
+      intent,
       listing as InquiryListingContext,
       {
         name: inquiry.name,
@@ -109,15 +125,17 @@ export class InquiriesService {
       inquiry.email,
       listing,
       quoteNumber,
+      intent,
       pdfBuffer,
     );
 
+    const intentLabel = intent === InquiryIntent.BUY ? 'purchase' : 'booking';
     await this.notificationsService.sendToRoleNames(
       ['SALES_AGENT', 'SUPER_ADMIN', 'MARKETPLACE_ADMIN'],
       {
         type: NotificationType.SYSTEM_ALERT,
-        title: 'New vehicle inquiry',
-        body: `${inquiry.name} inquired about ${listing.listingTitle}. Quote ${quoteNumber}.`,
+        title: `New vehicle ${intentLabel} inquiry`,
+        body: `${inquiry.name} submitted a ${intentLabel} inquiry for ${listing.listingTitle}. Quote ${quoteNumber}.`,
         metadata: {
           inquiryId: inquiry.id,
           listingId: listing.id,
@@ -131,8 +149,11 @@ export class InquiriesService {
       quoteNumber: inquiry.quoteNumber,
       email: inquiry.email,
       listingSlug: listing.slug,
+      intent,
       message:
-        'Your inquiry has been received. Check your email for your quote.',
+        intent === InquiryIntent.BUY
+          ? 'Your purchase request has been received. Check your email for price and payment details.'
+          : 'Your booking request has been received. Check your email for your quote and booking fee.',
     };
   }
 
@@ -307,6 +328,7 @@ export class InquiriesService {
     email: string,
     listing: InquiryListingContext,
     quoteNumber: string,
+    intent: InquiryIntent,
     quotePdf: Buffer,
   ) {
     const appName =
@@ -314,50 +336,33 @@ export class InquiriesService {
     const frontendUrl = (
       this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
     ).replace(/\/$/, '');
-    const company =
-      await this.platformSettingsService.getCompanyPaymentDetails();
+    const [company, bookingFeeUsd] = await Promise.all([
+      this.platformSettingsService.getCompanyPaymentDetails(),
+      this.platformSettingsService.getBookingFeeUsd(),
+    ]);
     const whatsappUrl = this.platformSettingsService.buildWhatsAppUrl(
       company.whatsappNumber,
-      `Hello UZA Mobility, my quote reference is ${quoteNumber}`,
+      `Hello UZA Mobility, my ${intent === InquiryIntent.BUY ? 'purchase' : 'booking'} reference is ${quoteNumber}`,
     );
 
-    const priceUsd = listing.listingPricing?.finalPriceUsd;
-    const deliveryDays = listing.deliveryEstimateDays;
-
-    const html = buildBrandedEmailHtml({
+    const { subject, html, text } = buildCommerceConfirmationEmail({
       appName,
-      recipientName: name.split(' ')[0] ?? name,
-      headline: 'Your vehicle quote',
-      bodyHtml: `
-        <p style="margin: 0 0 12px">Thank you for your interest in <strong>${escapeHtml(listing.listingTitle)}</strong>.</p>
-        <p style="margin: 0 0 12px">We received your inquiry and attached a reference quote (<strong>${escapeHtml(quoteNumber)}</strong>).</p>
-        <ul style="margin: 0 0 12px; padding-left: 18px; color: #424a53; font-size: 14px; line-height: 22px">
-          <li>Vehicle: ${escapeHtml(listing.listingTitle)}</li>
-          <li>Price: ${priceUsd != null ? `USD ${priceUsd.toLocaleString('en-US')}` : 'On request'}</li>
-          <li>Delivery estimate: ${deliveryDays != null ? `${deliveryDays} days` : 'Confirmed at reservation'}</li>
-          <li>Seller type: ${escapeHtml(listing.sellerType.replace(/_/g, ' '))}</li>
-        </ul>
-        <p style="margin: 0 0 12px">Include quote number <strong>${escapeHtml(quoteNumber)}</strong> when you contact us. This vehicle is <strong>not reserved</strong> until payment is confirmed.</p>
-        <p style="margin: 0">Reply to this email or message us on WhatsApp to proceed.</p>`,
-      actionUrl: whatsappUrl,
-      actionLabel: 'Chat on WhatsApp',
-      infoBoxHtml:
-        'Your quote PDF is attached. Create a free account to track inquiries and save vehicles.',
-      footerReason: `You are receiving this email because you submitted a vehicle inquiry on ${appName}.`,
-      companyLegalName: company.legalName,
-      companyLocation:
-        this.configService.get<string>('MAIL_COMPANY_LOCATION') ??
-        'Kigali, Rwanda',
-      logoUrl: `${frontendUrl}/images/FInal-logo.png`,
-      websiteUrl: frontendUrl,
-      supportUrl: `${frontendUrl}/inquiry/success?email=${encodeURIComponent(email)}`,
+      frontendUrl,
+      recipientName: name,
+      listing,
+      referenceNumber: quoteNumber,
+      intent,
+      company,
+      bookingFeeUsd,
+      whatsappUrl,
+      footerReason: `You are receiving this email because you submitted a vehicle ${intent === InquiryIntent.BUY ? 'purchase' : 'booking'} inquiry on ${appName}.`,
     });
 
     await this.mailService.sendMail({
       to: email,
-      subject: `Your vehicle quote from Uza Mobility — ${listing.listingTitle}`,
+      subject,
       html,
-      text: `Thank you ${name}. Your quote ${quoteNumber} for ${listing.listingTitle} is attached. This vehicle is not reserved until payment is confirmed.`,
+      text,
       bufferAttachments: [
         {
           filename: `${quoteNumber}.pdf`,

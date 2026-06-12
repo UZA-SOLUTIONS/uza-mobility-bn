@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { Prisma } from '@prisma/client';
 import { AuditService } from '../common/audit/audit.service';
 import type { RequestAuditContext } from '../common/audit/request-context.util';
@@ -18,6 +19,7 @@ import {
   sellerChannelKey,
 } from '../modules/sellers/seller-profile.util';
 import { NotificationsService } from '../modules/notifications/notifications.service';
+import { InvoicesService } from '../modules/invoices/invoices.service';
 import { MeUserProfile, SafeUser } from './users.types';
 import type { SellerType } from '@prisma/client';
 import { NotificationType } from '@prisma/client';
@@ -32,6 +34,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async findByEmail(email: string): Promise<UserWithRelations | null> {
@@ -237,6 +240,11 @@ export class UsersService {
         buyerType: profile.buyerType,
       },
     });
+
+    const invoicesService = this.moduleRef.get(InvoicesService, {
+      strict: false,
+    });
+    await invoicesService?.fulfillPendingBuyInquiries(userId);
 
     return profile;
   }

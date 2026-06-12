@@ -1,10 +1,16 @@
 import { ListingStatus, Prisma, SellerType } from '@prisma/client';
 
-/** Shown on marketplace browse and detail (with badges where applicable). */
+/** Detail page by slug — includes sold vehicles (direct links show sold state). */
 export const PUBLIC_MARKETPLACE_STATUSES: ListingStatus[] = [
   ListingStatus.PUBLISHED,
   ListingStatus.RESERVED,
   ListingStatus.SOLD,
+];
+
+/** Marketplace browse/search — available inventory only (sold hidden). */
+export const PUBLIC_BROWSE_STATUSES: ListingStatus[] = [
+  ListingStatus.PUBLISHED,
+  ListingStatus.RESERVED,
 ];
 
 /** Homepage curated sections — active inventory only (not sold). */

@@ -4,6 +4,7 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { AuthTokenType } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -32,6 +33,7 @@ import {
   parseDurationToMs,
 } from './auth-token.util';
 import { MailService } from '../../common/mail/mail.service';
+import { InvoicesService } from '../invoices/invoices.service';
 import type { SignOptions } from 'jsonwebtoken';
 
 /** Single public login failure message — avoids account-type enumeration. */
@@ -58,6 +60,7 @@ export class AuthService {
     private readonly rbacService: RbacService,
     private readonly auditService: AuditService,
     private readonly mailService: MailService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async register(
@@ -86,13 +89,7 @@ export class AuthService {
       },
     });
 
-    await this.prisma.inquiry.updateMany({
-      where: {
-        email,
-        userId: null,
-      },
-      data: { userId: createdUser.id },
-    });
+    await this.linkGuestActivityToUser(createdUser.id, email);
 
     await this.auditService.record({
       userId: createdUser.id,
@@ -167,10 +164,7 @@ export class AuthService {
         include: userInclude,
       });
 
-      await this.prisma.inquiry.updateMany({
-        where: { email, userId: null },
-        data: { userId: user.id },
-      });
+      await this.linkGuestActivityToUser(user.id, email);
 
       await this.auditService.record({
         userId: user.id,
@@ -192,10 +186,7 @@ export class AuthService {
         include: userInclude,
       });
 
-      await this.prisma.inquiry.updateMany({
-        where: { email, userId: null },
-        data: { userId: user.id },
-      });
+      await this.linkGuestActivityToUser(user.id, email);
     }
 
     this.assertUserIsActive(user);
@@ -531,6 +522,7 @@ export class AuthService {
     }
 
     const safeUser = this.usersService.toSafeUser(user);
+    await this.linkGuestActivityToUser(safeUser.id, safeUser.email);
     const tokens = await this.issueTokens(safeUser);
 
     await this.auditService.record({
@@ -560,6 +552,29 @@ export class AuthService {
     if (!user.isEmailVerified) {
       throw new UnauthorizedException(EMAIL_NOT_VERIFIED_MESSAGE);
     }
+  }
+
+  private async linkGuestActivityToUser(
+    userId: string,
+    email: string,
+  ): Promise<void> {
+    const normalized = normalizeAuthEmail(email);
+
+    await Promise.all([
+      this.prisma.inquiry.updateMany({
+        where: { email: normalized, userId: null },
+        data: { userId },
+      }),
+      this.prisma.fleetRequest.updateMany({
+        where: { email: normalized, userId: null },
+        data: { userId },
+      }),
+    ]);
+
+    const invoicesService = this.moduleRef.get(InvoicesService, {
+      strict: false,
+    });
+    await invoicesService?.fulfillPendingBuyInquiries(userId);
   }
 
   private hashPassword(password: string): string {

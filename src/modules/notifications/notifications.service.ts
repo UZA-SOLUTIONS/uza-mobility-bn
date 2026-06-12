@@ -48,6 +48,7 @@ export class NotificationsService {
           body: input.body,
           subject: input.emailSubject,
           html: input.emailHtml,
+          attachments: input.emailAttachments,
         },
         input.emailDespiteInactive,
       ).catch((error) => {
@@ -161,6 +162,7 @@ export class NotificationsService {
       body: string;
       subject?: string;
       html?: string;
+      attachments?: Array<{ filename: string; content: Buffer }>;
     },
     despiteInactive = false,
   ): Promise<void> {
@@ -199,6 +201,7 @@ export class NotificationsService {
       subject,
       html,
       text: content.body,
+      bufferAttachments: content.attachments,
     });
   }
 }

@@ -1,10 +1,7 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Transporter } from 'nodemailer';
 import * as nodemailer from 'nodemailer';
-import { EMAIL_LOGO_CID, EMAIL_LOGO_FILENAME } from './email-brand.constants';
 import {
   buildBrandedEmailHtml,
   escapeHtml,
@@ -16,7 +13,6 @@ export interface SendMailInput {
   subject: string;
   html: string;
   text?: string;
-  /** Extra attachments from disk (logo CID is added automatically when available). */
   fileAttachments?: Array<{ filename: string; path: string }>;
   bufferAttachments?: Array<{ filename: string; content: Buffer }>;
 }
@@ -27,11 +23,8 @@ export class MailService implements OnModuleInit {
   private transporter: Transporter | null = null;
   private enabled = false;
   private fromAddress = 'noreply@uza.local';
-  private embeddedLogoPath: string | null = null;
 
-  constructor(private readonly configService: ConfigService) {
-    this.embeddedLogoPath = this.resolveEmbeddedLogoPath();
-  }
+  constructor(private readonly configService: ConfigService) {}
 
   onModuleInit(): void {
     this.enabled =
@@ -68,14 +61,6 @@ export class MailService implements OnModuleInit {
     });
 
     this.logger.log(`SMTP ready (${host}:${port})`);
-
-    if (this.embeddedLogoPath) {
-      this.logger.log(`Email logo embedded from ${this.embeddedLogoPath}`);
-    } else {
-      this.logger.warn(
-        'Bundled email logo not found — emails will use MAIL_LOGO_URL or FRONTEND_URL fallback',
-      );
-    }
   }
 
   isEnabled(): boolean {
@@ -91,15 +76,6 @@ export class MailService implements OnModuleInit {
     }
 
     const attachments = [
-      ...(this.embeddedLogoPath
-        ? [
-            {
-              filename: EMAIL_LOGO_FILENAME,
-              path: this.embeddedLogoPath,
-              cid: EMAIL_LOGO_CID,
-            },
-          ]
-        : []),
       ...(input.fileAttachments ?? []).map((file) => ({
         filename: file.filename,
         path: file.path,
@@ -131,12 +107,11 @@ export class MailService implements OnModuleInit {
 
     return buildBrandedEmailHtml({
       ...brand,
+      logoUrl: '',
       headline: params.title,
       bodyHtml: `<p style="margin: 0 0 12px">${escapeHtml(params.body)}</p>`,
       actionUrl: params.frontendUrl,
       actionLabel: params.actionLabel ?? `Open ${params.appName}`,
-      infoBoxHtml:
-        'Need help? Our support team can assist with your account, orders, and mobility services.',
       footerReason: `You are receiving this email because you have an account or activity on ${params.appName}.`,
     });
   }
@@ -150,6 +125,7 @@ export class MailService implements OnModuleInit {
 
     return buildBrandedEmailHtml({
       ...brand,
+      logoUrl: '',
       recipientName: params.firstName,
       headline: 'Verify your email',
       bodyHtml: `
@@ -163,8 +139,6 @@ export class MailService implements OnModuleInit {
         </p>`,
       actionUrl: params.verifyUrl,
       actionLabel: 'Verify your email',
-      infoBoxHtml:
-        'Did not receive this email? Check your spam folder or sign in and request a new verification link.',
       footerReason: `You are receiving this email because you created an account on ${params.appName}. If you did not sign up, you can ignore this message.`,
     });
   }
@@ -178,6 +152,7 @@ export class MailService implements OnModuleInit {
 
     return buildBrandedEmailHtml({
       ...brand,
+      logoUrl: '',
       recipientName: params.firstName,
       headline: 'Reset your password',
       bodyHtml: `
@@ -192,7 +167,6 @@ export class MailService implements OnModuleInit {
         </p>`,
       actionUrl: params.resetUrl,
       actionLabel: 'Reset your password',
-      infoBoxHtml: 'Never share your password or this reset link with anyone.',
       footerReason: `You are receiving this email because a password reset was requested for your ${params.appName} account. If you did not request this, you can ignore this message.`,
     });
   }
@@ -213,11 +187,6 @@ export class MailService implements OnModuleInit {
       this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
     ).replace(/\/$/, '');
 
-    const logoUrl = this.embeddedLogoPath
-      ? `cid:${EMAIL_LOGO_CID}`
-      : (this.configService.get<string>('MAIL_LOGO_URL') ??
-        `${frontendUrl}/images/FInal-logo.png`);
-
     const tagline =
       this.configService.get<string>('MAIL_TAGLINE') ??
       'Electric vehicle marketplace and mobility platform for Rwanda.';
@@ -237,35 +206,11 @@ export class MailService implements OnModuleInit {
     return {
       appName,
       tagline,
-      logoUrl,
+      logoUrl: '',
       websiteUrl: frontendUrl,
       supportUrl,
       companyLegalName,
       companyLocation,
     };
-  }
-
-  private resolveEmbeddedLogoPath(): string | null {
-    const candidates = [
-      join(__dirname, 'assets', EMAIL_LOGO_FILENAME),
-      join(
-        process.cwd(),
-        'src',
-        'common',
-        'mail',
-        'assets',
-        EMAIL_LOGO_FILENAME,
-      ),
-      join(
-        process.cwd(),
-        'dist',
-        'common',
-        'mail',
-        'assets',
-        EMAIL_LOGO_FILENAME,
-      ),
-    ];
-
-    return candidates.find((path) => existsSync(path)) ?? null;
   }
 }

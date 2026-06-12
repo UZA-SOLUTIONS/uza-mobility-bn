@@ -25,7 +25,7 @@ export class FleetController {
   @ApiOperation({
     summary: 'Submit fleet request (no login required)',
     description:
-      'Uses your JWT user when logged in; otherwise links to the seeded fleet guest account.',
+      'Uses your JWT user when logged in; otherwise stored without a user until you register or sign in with the same email.',
   })
   submit(
     @Req() request: AuthenticatedRequest,

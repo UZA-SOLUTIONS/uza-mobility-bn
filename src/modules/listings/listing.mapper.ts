@@ -25,11 +25,11 @@ export function getPublicDisplayBadge(
   status: ListingStatus,
   isBooked?: boolean,
 ): string | null {
-  if (isBooked) {
-    return 'Booked';
-  }
   if (status === ListingStatus.SOLD) {
     return 'Sold';
+  }
+  if (isBooked) {
+    return 'Booked';
   }
   return null;
 }

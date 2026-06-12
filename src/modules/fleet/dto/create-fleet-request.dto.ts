@@ -25,14 +25,14 @@ export class CreateFleetRequestDto {
   @IsString()
   phone!: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty()
   @IsEmail()
-  email?: string;
+  email!: string;
 
-  @ApiProperty({ enum: BuyerType })
+  @ApiPropertyOptional({ enum: BuyerType, default: BuyerType.BUSINESS })
+  @IsOptional()
   @IsEnum(BuyerType)
-  buyerType!: BuyerType;
+  buyerType?: BuyerType;
 
   @ApiPropertyOptional()
   @IsOptional()

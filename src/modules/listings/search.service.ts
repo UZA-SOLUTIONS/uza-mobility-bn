@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ListingStatus, Prisma } from '@prisma/client';
 import {
+  PUBLIC_BROWSE_STATUSES,
   PUBLIC_CURATED_STATUSES,
   PUBLIC_MARKETPLACE_STATUSES,
 } from './listings.constants';
@@ -17,7 +18,7 @@ export class SearchService {
   ): Prisma.ListingWhereInput {
     const where: Prisma.ListingWhereInput = {
       status: {
-        in: options?.statuses ?? PUBLIC_MARKETPLACE_STATUSES,
+        in: options?.statuses ?? PUBLIC_BROWSE_STATUSES,
       },
     };
 

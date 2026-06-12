@@ -6,7 +6,8 @@ type ReferencePrefix =
   | 'UZM-ORD'
   | 'UZM-BKG'
   | 'UZM-BKG-PAY'
-  | 'UZM-QUO';
+  | 'UZM-QUO'
+  | 'UZM-FLT';
 
 export async function generateReferenceNumber(
   prisma: PrismaService,
@@ -70,6 +71,15 @@ export async function generateReferenceNumber(
         select: { quoteNumber: true },
       });
       lastValue = latest?.quoteNumber ?? null;
+      break;
+    }
+    case 'UZM-FLT': {
+      const latest = await prisma.fleetRequest.findFirst({
+        where: { referenceNumber: { startsWith: base } },
+        orderBy: { referenceNumber: 'desc' },
+        select: { referenceNumber: true },
+      });
+      lastValue = latest?.referenceNumber ?? null;
       break;
     }
   }

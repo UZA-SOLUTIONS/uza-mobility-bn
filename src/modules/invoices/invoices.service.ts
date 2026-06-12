@@ -5,12 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  InquiryIntent,
   InvoiceStatus,
   InvoiceType,
   ListingStatus,
   NotificationType,
   Prisma,
 } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { buildCommerceConfirmationEmail } from '../../common/mail/commerce-confirmation-email.util';
 import { generateReferenceNumber } from '../../common/utils/reference-number.util';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
@@ -18,6 +21,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { inquiryListingInclude } from '../inquiries/inquiry.mapper';
+import { QuotePdfService } from '../inquiries/quote-pdf.service';
 import { CreateFleetInvoiceDto } from './dto/create-fleet-invoice.dto';
 import { FilterInvoicesDto } from './dto/filter-invoices.dto';
 import { RequestInvoiceDto } from './dto/request-invoice.dto';
@@ -40,6 +45,8 @@ export class InvoicesService {
     private readonly notificationsService: NotificationsService,
     private readonly invoicePdfService: InvoicePdfService,
     private readonly pricingService: PricingService,
+    private readonly quotePdfService: QuotePdfService,
+    private readonly configService: ConfigService,
   ) {}
 
   async requestInvoice(
@@ -58,7 +65,7 @@ export class InvoicesService {
           status: ListingStatus.PUBLISHED,
           deletedAt: null,
         },
-        include: { listingPricing: true, seller: true },
+        include: inquiryListingInclude,
       }),
     ]);
 
@@ -152,12 +159,50 @@ export class InvoicesService {
 
     void this.invoicePdfService.generate(invoice.id).catch(() => undefined);
 
+    const buyerName = `${user.firstName} ${user.lastName}`.trim();
+    const bookingFeeUsd = await this.platformSettingsService.getBookingFeeUsd();
+    const pdfBuffer = await this.quotePdfService.generateBuffer(
+      paymentReference,
+      InquiryIntent.BUY,
+      listing,
+      {
+        name: buyerName,
+        email: user.email,
+        phone: user.phone ?? '',
+        country: user.buyerProfile.country,
+        buyerType: user.buyerProfile.buyerType,
+      },
+    );
+    const frontendUrl = (
+      this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
+    ).replace(/\/$/, '');
+    const appName =
+      this.configService.get<string>('APP_NAME') ?? 'UZA Mobility';
+    const emailContent = buildCommerceConfirmationEmail({
+      appName,
+      frontendUrl,
+      recipientName: buyerName,
+      listing,
+      referenceNumber: paymentReference,
+      intent: InquiryIntent.BUY,
+      company,
+      bookingFeeUsd,
+      accountActionUrl: `${frontendUrl}/my/invoices?highlight=${invoice.id}`,
+      accountActionLabel: 'View my invoice',
+      footerReason: `You are receiving this email because you requested a vehicle purchase invoice on ${appName}.`,
+    });
+
     await this.notificationsService.send({
       userId,
       type: NotificationType.INVOICE_ISSUED,
       title: 'Your invoice is ready',
-      body: `Invoice ${invoiceNumber} has been issued. Payment reference: ${paymentReference}`,
+      body: `Invoice ${invoiceNumber} has been issued. Payment reference: ${paymentReference}. Your purchase details PDF is attached.`,
       metadata: { invoiceId: invoice.id, listingId: listing.id },
+      emailSubject: emailContent.subject,
+      emailHtml: emailContent.html,
+      emailAttachments: [
+        { filename: `${invoiceNumber}.pdf`, content: pdfBuffer },
+      ],
     });
 
     await this.auditService.record({
@@ -174,6 +219,51 @@ export class InvoicesService {
     });
 
     return toBuyerInvoice(invoice);
+  }
+
+  /** Create invoices for linked guest buy inquiries once the buyer can trade. */
+  async fulfillPendingBuyInquiries(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { buyerProfile: true },
+    });
+
+    if (!user?.buyerProfile) {
+      return;
+    }
+
+    const buyInquiries = await this.prisma.inquiry.findMany({
+      where: {
+        userId,
+        intent: InquiryIntent.BUY,
+        listingId: { not: null },
+      },
+      select: { listingId: true },
+    });
+
+    for (const inquiry of buyInquiries) {
+      if (!inquiry.listingId) {
+        continue;
+      }
+
+      const existing = await this.prisma.invoice.findFirst({
+        where: {
+          userId,
+          listingId: inquiry.listingId,
+          status: { in: ACTIVE_INVOICE_STATUSES },
+        },
+      });
+
+      if (existing) {
+        continue;
+      }
+
+      try {
+        await this.requestInvoice(userId, { listingId: inquiry.listingId });
+      } catch {
+        // Listing may be unavailable — skip silently.
+      }
+    }
   }
 
   async findMine(userId: string, filters: FilterInvoicesDto) {

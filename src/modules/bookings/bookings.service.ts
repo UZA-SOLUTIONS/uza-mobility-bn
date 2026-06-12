@@ -5,16 +5,21 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  InquiryIntent,
   ListingStatus,
   NotificationType,
   VehicleBookingStatus,
 } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { buildCommerceConfirmationEmail } from '../../common/mail/commerce-confirmation-email.util';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { generateReferenceNumber } from '../../common/utils/reference-number.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { inquiryListingInclude } from '../inquiries/inquiry.mapper';
+import { QuotePdfService } from '../inquiries/quote-pdf.service';
 import { ACTIVE_INVOICE_STATUSES } from '../invoices/invoice.constants';
 import {
   supersedeActiveBookingsForListing,
@@ -58,6 +63,8 @@ export class BookingsService {
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
+    private readonly quotePdfService: QuotePdfService,
+    private readonly configService: ConfigService,
   ) {}
 
   getBookingFeeUsd(): Promise<number> {
@@ -150,6 +157,7 @@ export class BookingsService {
 
     const listing = await this.prisma.listing.findUnique({
       where: { id: dto.listingId },
+      include: inquiryListingInclude,
     });
 
     if (!listing) {
@@ -226,12 +234,51 @@ export class BookingsService {
       include: bookingInclude,
     });
 
+    const buyerName = `${user.firstName} ${user.lastName}`.trim();
+    const company =
+      await this.platformSettingsService.getCompanyPaymentDetails();
+    const pdfBuffer = await this.quotePdfService.generateBuffer(
+      paymentReference,
+      InquiryIntent.BOOK,
+      listing,
+      {
+        name: buyerName,
+        email: user.email,
+        phone: user.phone ?? '',
+        country: user.buyerProfile.country,
+        buyerType: user.buyerProfile.buyerType,
+      },
+    );
+    const frontendUrl = (
+      this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
+    ).replace(/\/$/, '');
+    const appName =
+      this.configService.get<string>('APP_NAME') ?? 'UZA Mobility';
+    const emailContent = buildCommerceConfirmationEmail({
+      appName,
+      frontendUrl,
+      recipientName: buyerName,
+      listing,
+      referenceNumber: paymentReference,
+      intent: InquiryIntent.BOOK,
+      company,
+      bookingFeeUsd,
+      accountActionUrl: `${frontendUrl}/my/bookings?highlight=${booking.id}`,
+      accountActionLabel: 'View my booking',
+      footerReason: `You are receiving this email because you created a vehicle booking on ${appName}.`,
+    });
+
     await this.notificationsService.send({
       userId,
       type: NotificationType.INVOICE_ISSUED,
       title: 'Vehicle booking created',
-      body: `Pay the booking fee of $${bookingFeeUsd} USD using reference ${paymentReference}.`,
+      body: `Pay the booking fee of $${bookingFeeUsd} USD using reference ${paymentReference}. Your booking quote PDF is attached.`,
       metadata: { bookingId: booking.id, listingId: listing.id },
+      emailSubject: emailContent.subject,
+      emailHtml: emailContent.html,
+      emailAttachments: [
+        { filename: `${bookingNumber}.pdf`, content: pdfBuffer },
+      ],
     });
 
     await this.auditService.record({
