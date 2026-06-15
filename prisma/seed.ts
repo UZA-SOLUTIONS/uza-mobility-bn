@@ -238,6 +238,53 @@ async function seedPermissionsAndRoleMappings() {
   }
 }
 
+function resolveSeedAccount(config: {
+  label: string;
+  emailKey: string;
+  passwordKey: string;
+  firstNameKey: string;
+  lastNameKey: string;
+  rolesKey: string;
+  defaultFirstName: string;
+  defaultLastName: string;
+  defaultRoles: string[];
+}) {
+  const email = process.env[config.emailKey]?.trim();
+  const plainPassword = process.env[config.passwordKey];
+  if (!email || !plainPassword) {
+    return null;
+  }
+
+  const rolesRaw =
+    process.env[config.rolesKey]?.trim() || config.defaultRoles.join(',');
+
+  return {
+    email,
+    plainPassword,
+    firstName:
+      process.env[config.firstNameKey]?.trim() || config.defaultFirstName,
+    lastName: process.env[config.lastNameKey]?.trim() || config.defaultLastName,
+    roleNames: rolesRaw
+      .split(',')
+      .map((role) => role.trim())
+      .filter(Boolean),
+    preferredLanguage: 'en' as const,
+  };
+}
+
+async function seedAccountIfConfigured(config: Parameters<typeof resolveSeedAccount>[0]) {
+  const account = resolveSeedAccount(config);
+  if (!account) {
+    console.log(
+      `⏭️  Skipping ${config.label} (set ${config.emailKey} and ${config.passwordKey} to seed)`,
+    );
+    return null;
+  }
+
+  await ensureUserWithRoles(account);
+  return account;
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) {
     throw new Error('Missing DATABASE_URL. Add it to your .env before running prisma:seed.');
@@ -246,49 +293,145 @@ async function main() {
   // Roles for login testing
   await seedPermissionsAndRoleMappings();
 
-  // Use single-role users (easier to reason about during login tests)
-  // If you still want admin to have multiple roles, add them to roleNames array.
-  await ensureUserWithRoles({
-    email: 'admin@uza.local',
-    plainPassword: 'Password123!',
-    firstName: 'UZA',
-    lastName: 'Admin',
-    roleNames: ['SUPER_ADMIN', 'SELLER'],
-    preferredLanguage: 'en',
+  const adminAccount = await seedAccountIfConfigured({
+    label: 'admin account',
+    emailKey: 'SEED_ADMIN_EMAIL',
+    passwordKey: 'SEED_ADMIN_PASSWORD',
+    firstNameKey: 'SEED_ADMIN_FIRST_NAME',
+    lastNameKey: 'SEED_ADMIN_LAST_NAME',
+    rolesKey: 'SEED_ADMIN_ROLES',
+    defaultFirstName: 'UZA',
+    defaultLastName: 'Admin',
+    defaultRoles: ['SUPER_ADMIN', 'SELLER'],
   });
 
-  const adminUser = await prisma.user.findUnique({
-    where: { email: 'admin@uza.local' },
+  if (adminAccount) {
+    const adminUser = await prisma.user.findUnique({
+      where: { email: adminAccount.email },
+    });
+
+    if (adminUser) {
+      for (const sellerType of [
+        SellerType.UZA_RWANDA_STOCK,
+        SellerType.UZA_CHINA_SOURCING,
+      ] as const) {
+        const label =
+          sellerType === SellerType.UZA_RWANDA_STOCK
+            ? 'UZA Rwanda Stock'
+            : 'UZA China Sourcing';
+
+        await prisma.seller.upsert({
+          where: {
+            userId_sellerType: {
+              userId: adminUser.id,
+              sellerType,
+            },
+          },
+          update: {
+            businessName: label,
+            status: 'ACTIVE',
+            country: 'RW',
+            city: 'Kigali',
+            isVerified: true,
+          },
+          create: {
+            userId: adminUser.id,
+            businessName: label,
+            sellerType,
+            status: 'ACTIVE',
+            country: 'RW',
+            city: 'Kigali',
+            isVerified: true,
+          },
+        });
+      }
+    }
+  }
+
+  await seedAccountIfConfigured({
+    label: 'buyer account',
+    emailKey: 'SEED_BUYER_EMAIL',
+    passwordKey: 'SEED_BUYER_PASSWORD',
+    firstNameKey: 'SEED_BUYER_FIRST_NAME',
+    lastNameKey: 'SEED_BUYER_LAST_NAME',
+    rolesKey: 'SEED_BUYER_ROLES',
+    defaultFirstName: 'Rwanda',
+    defaultLastName: 'Buyer',
+    defaultRoles: ['BUYER'],
   });
 
-  if (adminUser) {
-    for (const sellerType of [
-      SellerType.UZA_RWANDA_STOCK,
-      SellerType.UZA_CHINA_SOURCING,
-    ] as const) {
-      const label =
-        sellerType === SellerType.UZA_RWANDA_STOCK
-          ? 'UZA Rwanda Stock'
-          : 'UZA China Sourcing';
+  await seedAccountIfConfigured({
+    label: 'logistics account',
+    emailKey: 'SEED_LOGISTICS_EMAIL',
+    passwordKey: 'SEED_LOGISTICS_PASSWORD',
+    firstNameKey: 'SEED_LOGISTICS_FIRST_NAME',
+    lastNameKey: 'SEED_LOGISTICS_LAST_NAME',
+    rolesKey: 'SEED_LOGISTICS_ROLES',
+    defaultFirstName: 'UZA',
+    defaultLastName: 'Logistics',
+    defaultRoles: ['LOGISTICS_ADMIN'],
+  });
 
+  await seedAccountIfConfigured({
+    label: 'fleet account',
+    emailKey: 'SEED_FLEET_EMAIL',
+    passwordKey: 'SEED_FLEET_PASSWORD',
+    firstNameKey: 'SEED_FLEET_FIRST_NAME',
+    lastNameKey: 'SEED_FLEET_LAST_NAME',
+    rolesKey: 'SEED_FLEET_ROLES',
+    defaultFirstName: 'UZA',
+    defaultLastName: 'Fleet',
+    defaultRoles: ['FLEET_ADMIN'],
+  });
+
+  await seedAccountIfConfigured({
+    label: 'finance account',
+    emailKey: 'SEED_FINANCE_EMAIL',
+    passwordKey: 'SEED_FINANCE_PASSWORD',
+    firstNameKey: 'SEED_FINANCE_FIRST_NAME',
+    lastNameKey: 'SEED_FINANCE_LAST_NAME',
+    rolesKey: 'SEED_FINANCE_ROLES',
+    defaultFirstName: 'UZA',
+    defaultLastName: 'Finance',
+    defaultRoles: ['FINANCE_ADMIN'],
+  });
+
+  const sellerAccount = await seedAccountIfConfigured({
+    label: 'seller account',
+    emailKey: 'SEED_SELLER_EMAIL',
+    passwordKey: 'SEED_SELLER_PASSWORD',
+    firstNameKey: 'SEED_SELLER_FIRST_NAME',
+    lastNameKey: 'SEED_SELLER_LAST_NAME',
+    rolesKey: 'SEED_SELLER_ROLES',
+    defaultFirstName: 'Kigali',
+    defaultLastName: 'Seller',
+    defaultRoles: ['BUYER', 'SELLER'],
+  });
+
+  if (sellerAccount) {
+    const sellerUser = await prisma.user.findUnique({
+      where: { email: sellerAccount.email },
+    });
+
+    if (sellerUser) {
       await prisma.seller.upsert({
         where: {
           userId_sellerType: {
-            userId: adminUser.id,
-            sellerType,
+            userId: sellerUser.id,
+            sellerType: SellerType.LOCAL_SELLER,
           },
         },
         update: {
-          businessName: label,
+          businessName: 'Kigali EV Motors',
           status: 'ACTIVE',
           country: 'RW',
           city: 'Kigali',
           isVerified: true,
         },
         create: {
-          userId: adminUser.id,
-          businessName: label,
-          sellerType,
+          userId: sellerUser.id,
+          businessName: 'Kigali EV Motors',
+          sellerType: SellerType.LOCAL_SELLER,
           status: 'ACTIVE',
           country: 'RW',
           city: 'Kigali',
@@ -296,91 +439,6 @@ async function main() {
         },
       });
     }
-  }
-
-  await ensureUserWithRoles({
-    email: 'buyer@uza.local',
-    plainPassword: 'Password123!',
-    firstName: 'Rwanda',
-    lastName: 'Buyer',
-    roleNames: ['BUYER'],
-    preferredLanguage: 'en',
-  });
-
-  await ensureUserWithRoles({
-    email: 'logistics@uza.local',
-    plainPassword: 'Password123!',
-    firstName: 'UZA',
-    lastName: 'Logistics',
-    roleNames: ['LOGISTICS_ADMIN'],
-    preferredLanguage: 'en',
-  });
-
-  await ensureUserWithRoles({
-    email: 'fleet@uza.local',
-    plainPassword: 'Password123!',
-    firstName: 'UZA',
-    lastName: 'Fleet',
-    roleNames: ['FLEET_ADMIN'],
-    preferredLanguage: 'en',
-  });
-
-  await ensureUserWithRoles({
-    email: 'fleet-guest@uza.local',
-    plainPassword: 'Password123!',
-    firstName: 'Fleet',
-    lastName: 'Guest',
-    roleNames: ['BUYER'],
-    preferredLanguage: 'en',
-  });
-
-  await ensureUserWithRoles({
-    email: 'finance@uza.local',
-    plainPassword: 'Password123!',
-    firstName: 'UZA',
-    lastName: 'Finance',
-    roleNames: ['FINANCE_ADMIN'],
-    preferredLanguage: 'en',
-  });
-
-  await ensureUserWithRoles({
-    email: 'seller@uza.local',
-    plainPassword: 'Password123!',
-    firstName: 'Kigali',
-    lastName: 'Seller',
-    roleNames: ['BUYER', 'SELLER'],
-    preferredLanguage: 'en',
-  });
-
-  const sellerUser = await prisma.user.findUnique({
-    where: { email: 'seller@uza.local' },
-  });
-
-  if (sellerUser) {
-    await prisma.seller.upsert({
-      where: {
-        userId_sellerType: {
-          userId: sellerUser.id,
-          sellerType: SellerType.LOCAL_SELLER,
-        },
-      },
-      update: {
-        businessName: 'Kigali EV Motors',
-        status: 'ACTIVE',
-        country: 'RW',
-        city: 'Kigali',
-        isVerified: true,
-      },
-      create: {
-        userId: sellerUser.id,
-        businessName: 'Kigali EV Motors',
-        sellerType: SellerType.LOCAL_SELLER,
-        status: 'ACTIVE',
-        country: 'RW',
-        city: 'Kigali',
-        isVerified: true,
-      },
-    });
   }
 
   await seedCategories(prisma);

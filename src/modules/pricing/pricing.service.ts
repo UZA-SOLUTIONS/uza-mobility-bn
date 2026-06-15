@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import type { PricingRule, SellerType } from '@prisma/client';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { ListingPricing, PricingRule, SellerType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  breakdownToListingPricingCreate,
+  parsePricingRuleIdFromPriceNotes,
+  toPricingInput,
+} from '../listings/listing-pricing.util';
 import { CalculatePriceDto } from './dto/calculate-price.dto';
 import { CreatePricingRuleDto } from './dto/create-pricing-rule.dto';
 import { UpdatePricingRuleDto } from './dto/update-pricing-rule.dto';
@@ -8,6 +13,8 @@ import type { PriceBreakdown, PricingInput } from './pricing.types';
 
 @Injectable()
 export class PricingService {
+  private readonly logger = new Logger(PricingService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async findAllRules() {
@@ -22,7 +29,17 @@ export class PricingService {
 
   async updateRule(id: string, dto: UpdatePricingRuleDto) {
     await this.getRuleOrThrow(id);
-    return this.prisma.pricingRule.update({ where: { id }, data: dto });
+    const updated = await this.prisma.pricingRule.update({
+      where: { id },
+      data: dto,
+    });
+    const listingsSynced = await this.syncListingsForPricingRule(id);
+    if (listingsSynced > 0) {
+      this.logger.log(
+        `Synced pricing for ${listingsSynced} listing(s) after rule ${id} update`,
+      );
+    }
+    return updated;
   }
 
   async deactivateRule(id: string) {
@@ -43,6 +60,7 @@ export class PricingService {
         discountUsd: dto.discountUsd,
       },
       dto.originCountry,
+      dto.pricingRuleId,
     );
   }
 
@@ -50,8 +68,11 @@ export class PricingService {
     sellerType: SellerType,
     input: PricingInput,
     originCountry?: string,
+    pricingRuleId?: string,
   ): Promise<PriceBreakdown> {
-    const rule = await this.getActiveRule(sellerType, originCountry);
+    const rule = pricingRuleId
+      ? await this.getRuleOrThrow(pricingRuleId)
+      : await this.getActiveRule(sellerType, originCountry);
 
     switch (sellerType) {
       case 'UZA_RWANDA_STOCK':
@@ -209,5 +230,98 @@ export class PricingService {
       throw new NotFoundException('Pricing rule not found');
     }
     return rule;
+  }
+
+  /** Recompute stored listing prices that use this rule (explicit or default). */
+  private async syncListingsForPricingRule(
+    pricingRuleId: string,
+  ): Promise<number> {
+    const rule = await this.getRuleOrThrow(pricingRuleId);
+
+    const listings = await this.prisma.listing.findMany({
+      where: {
+        sellerType: rule.sellerType,
+        listingPricing: { isNot: null },
+      },
+      include: { listingPricing: true },
+    });
+
+    const activeRuleIdByCountry = new Map<string, string>();
+    let synced = 0;
+
+    for (const listing of listings) {
+      const pricing = listing.listingPricing;
+      if (!pricing) continue;
+
+      const linkedRuleId = parsePricingRuleIdFromPriceNotes(pricing.priceNotes);
+      let applies = linkedRuleId === pricingRuleId;
+
+      if (!applies && !linkedRuleId) {
+        const countryKey = listing.country ?? '';
+        let activeRuleId = activeRuleIdByCountry.get(countryKey);
+        if (activeRuleId === undefined) {
+          try {
+            const activeRule = await this.getActiveRule(
+              listing.sellerType,
+              listing.country ?? undefined,
+            );
+            activeRuleId = activeRule.id;
+          } catch {
+            activeRuleId = '';
+          }
+          activeRuleIdByCountry.set(countryKey, activeRuleId);
+        }
+        applies = activeRuleId === pricingRuleId;
+      }
+
+      if (!applies) continue;
+
+      await this.recalculateListingPricing(
+        listing,
+        pricing,
+        linkedRuleId ?? pricingRuleId,
+      );
+      synced += 1;
+    }
+
+    return synced;
+  }
+
+  private async recalculateListingPricing(
+    listing: {
+      id: string;
+      sellerType: SellerType;
+      country: string | null;
+    },
+    pricing: ListingPricing,
+    pricingRuleId: string,
+  ): Promise<void> {
+    const breakdown = await this.calculatePrice(
+      listing.sellerType,
+      toPricingInput({
+        basePriceUsd: pricing.basePriceUsd ?? undefined,
+        fobPriceUsd: pricing.fobPriceUsd ?? undefined,
+        sellerDesiredPayoutUsd: pricing.sellerDesiredPayoutUsd ?? undefined,
+        discountUsd: pricing.discountUsd ?? undefined,
+      }),
+      listing.country ?? undefined,
+      pricingRuleId,
+    );
+
+    const pricingData = breakdownToListingPricingCreate(
+      breakdown,
+      pricingRuleId,
+    );
+
+    await this.prisma.$transaction([
+      this.prisma.listingPricing.update({
+        where: { listingId: listing.id },
+        data: pricingData,
+      }),
+      this.prisma.listing.update({
+        where: { id: listing.id },
+        data: { deliveryEstimateDays: breakdown.deliveryDaysMax },
+      }),
+    ]);
   }
 }

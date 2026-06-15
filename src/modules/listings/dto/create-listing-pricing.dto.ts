@@ -1,9 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 /**
- * Seller/admin provides cost inputs only. finalPriceUsd and finalPriceRwf
- * are computed server-side via PricingService from active pricing rules.
+ * Seller/admin provides cost inputs only. finalPriceUsd is computed
+ * server-side via PricingService from active pricing rules.
  */
 export class CreateListingPricingDto {
   @ApiPropertyOptional({
@@ -44,4 +44,12 @@ export class CreateListingPricingDto {
   @IsNumber()
   @Min(0)
   discountUsd?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Active pricing rule to apply. When omitted, the platform picks the default active rule for the seller type.',
+  })
+  @IsOptional()
+  @IsString()
+  pricingRuleId?: string;
 }

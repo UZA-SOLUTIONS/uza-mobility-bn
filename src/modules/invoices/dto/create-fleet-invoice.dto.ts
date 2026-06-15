@@ -60,12 +60,6 @@ export class CreateFleetInvoiceDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  totalAmountRwf?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
   @IsString()
   notes?: string;
 }

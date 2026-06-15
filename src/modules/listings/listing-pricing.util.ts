@@ -5,7 +5,11 @@ import type { CreateListingPricingDto } from './dto/create-listing-pricing.dto';
 
 export type ListingPricingInputDto = Pick<
   CreateListingPricingDto,
-  'basePriceUsd' | 'fobPriceUsd' | 'sellerDesiredPayoutUsd' | 'discountUsd'
+  | 'basePriceUsd'
+  | 'fobPriceUsd'
+  | 'sellerDesiredPayoutUsd'
+  | 'discountUsd'
+  | 'pricingRuleId'
 >;
 
 export function toPricingInput(dto: ListingPricingInputDto): PricingInput {
@@ -75,6 +79,7 @@ export function mergeListingPricingInput(
 
 export function breakdownToListingPricingCreate(
   breakdown: PriceBreakdown,
+  pricingRuleId?: string,
 ): Prisma.ListingPricingCreateWithoutListingInput {
   return {
     basePriceUsd: breakdown.basePriceUsd,
@@ -92,9 +97,22 @@ export function breakdownToListingPricingCreate(
     discountUsd: breakdown.discountUsd,
     finalPriceUsd: breakdown.finalPriceUsd,
     currency: breakdown.currency,
+    priceNotes: pricingRuleId ? JSON.stringify({ pricingRuleId }) : undefined,
   };
 }
 
 export function deliveryDaysFromBreakdown(breakdown: PriceBreakdown): number {
   return breakdown.deliveryDaysMax;
+}
+
+export function parsePricingRuleIdFromPriceNotes(
+  priceNotes: string | null | undefined,
+): string | undefined {
+  if (!priceNotes) return undefined;
+  try {
+    const parsed = JSON.parse(priceNotes) as { pricingRuleId?: string };
+    return parsed.pricingRuleId;
+  } catch {
+    return undefined;
+  }
 }

@@ -371,6 +371,13 @@ enum VerificationLevel {
   PREMIUM_VERIFIED
 }
 
+enum RegistrationStatus {
+  REGISTERED
+  READY_FOR_REGISTRATION
+  IMPORT_PENDING
+  NOT_APPLICABLE
+}
+
 model Listing {
   id                  String             @id @default(cuid())
   sellerId            String
@@ -398,7 +405,7 @@ model Listing {
   warrantyDetails     String?
   hasAccidentHistory  Boolean            @default(false)
   ownershipCount      Int?
-  registrationStatus  String?
+  registrationStatus  RegistrationStatus?
   vehicleLocation     String?
   city                String?
   country             String             @default("RW")
@@ -538,7 +545,6 @@ model PricingRule {
   clearingFeeUsd   Float?
   platformMarginPercent Float?
   commissionRate   Float?
-  exchangeRateRwf  Float?     // USD to RWF rate
   deliveryDaysMin  Int?
   deliveryDaysMax  Int?
   isActive         Boolean    @default(true)
@@ -568,7 +574,6 @@ model ListingPricing {
   commissionUsd         Float?
   discountUsd           Float?
   finalPriceUsd         Float
-  finalPriceRwf         Float?
   currency              String   @default("USD")
   priceValidUntil       DateTime?
   priceNotes            String?
@@ -671,7 +676,6 @@ model Invoice {
   marginUsd         Float?
   discountUsd       Float?
   totalAmountUsd    Float
-  totalAmountRwf    Float?
   currency          String        @default("USD")
 
   // Payment details

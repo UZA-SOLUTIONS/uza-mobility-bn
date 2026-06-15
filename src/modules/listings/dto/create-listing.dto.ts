@@ -4,6 +4,7 @@ import {
   ConditionLevel,
   DrivetrainType,
   PowertrainType,
+  RegistrationStatus,
   SellerType,
   SteeringPosition,
   UseCase,
@@ -130,15 +131,16 @@ export class CreateListingDto {
   @Min(0)
   ownershipCount?: number;
 
+  @ApiPropertyOptional({ enum: RegistrationStatus })
+  @IsOptional()
+  @IsEnum(RegistrationStatus)
+  registrationStatus?: RegistrationStatus;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  registrationStatus?: string;
-
-  @ApiProperty()
-  @IsString()
   @Length(1, 255)
-  vehicleLocation!: string;
+  vehicleLocation?: string;
 
   @ApiProperty()
   @IsString()

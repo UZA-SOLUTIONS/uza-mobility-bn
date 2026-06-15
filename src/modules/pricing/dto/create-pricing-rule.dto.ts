@@ -66,11 +66,6 @@ export class CreatePricingRuleDto {
   @IsNumber()
   commissionRate?: number;
 
-  @ApiPropertyOptional({ example: 1300 })
-  @IsOptional()
-  @IsNumber()
-  exchangeRateRwf?: number;
-
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)

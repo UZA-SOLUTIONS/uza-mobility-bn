@@ -329,6 +329,8 @@ export class ListingsService {
         dto.sellerType,
         dto.country,
         dto.pricing,
+        undefined,
+        dto.deliveryEstimateDays,
       );
 
     const listing = await this.prisma.listing.create({
@@ -400,6 +402,8 @@ export class ListingsService {
         dto.sellerType,
         dto.country,
         dto.pricing,
+        undefined,
+        dto.deliveryEstimateDays,
       );
 
     const listing = await this.prisma.listing.create({
@@ -579,6 +583,7 @@ export class ListingsService {
         country,
         pricing,
         existingPricing,
+        listingFields.deliveryEstimateDays,
       );
       pricingCreate = resolved.pricing;
       deliveryDaysFromPricing = resolved.deliveryDaysMax;
@@ -741,6 +746,7 @@ export class ListingsService {
         country,
         dto.pricing,
         existingPricing,
+        dto.deliveryEstimateDays,
       );
       pricingCreate = resolved.pricing;
       deliveryDaysFromPricing = resolved.deliveryDaysMax;
@@ -1280,6 +1286,7 @@ export class ListingsService {
       sellerDesiredPayoutUsd: number | null;
       discountUsd: number | null;
     } | null,
+    deliveryEstimateDays?: number,
   ): Promise<{
     pricing: Prisma.ListingPricingCreateWithoutListingInput;
     deliveryDaysMax: number;
@@ -1296,11 +1303,16 @@ export class ListingsService {
       sellerType,
       toPricingInput(input),
       originCountry,
+      partial.pricingRuleId,
     );
 
     return {
-      pricing: breakdownToListingPricingCreate(breakdown),
-      deliveryDaysMax: deliveryDaysFromBreakdown(breakdown),
+      pricing: breakdownToListingPricingCreate(
+        breakdown,
+        partial.pricingRuleId,
+      ),
+      deliveryDaysMax:
+        deliveryEstimateDays ?? deliveryDaysFromBreakdown(breakdown),
     };
   }
 
@@ -1339,7 +1351,7 @@ export class ListingsService {
       hasAccidentHistory: dto.hasAccidentHistory ?? false,
       ownershipCount: dto.ownershipCount,
       registrationStatus: dto.registrationStatus,
-      vehicleLocation: dto.vehicleLocation,
+      vehicleLocation: this.resolveVehicleLocation(dto),
       city: dto.city,
       country: dto.country,
       deliveryEstimateDays: dto.deliveryEstimateDays ?? deliveryDaysMax,
@@ -1383,7 +1395,17 @@ export class ListingsService {
       hasAccidentHistory: dto.hasAccidentHistory,
       ownershipCount: dto.ownershipCount,
       registrationStatus: dto.registrationStatus,
-      vehicleLocation: dto.vehicleLocation,
+      ...(dto.vehicleLocation !== undefined ||
+      dto.city !== undefined ||
+      dto.country !== undefined
+        ? {
+            vehicleLocation: this.resolveVehicleLocation({
+              vehicleLocation: dto.vehicleLocation,
+              city: dto.city ?? '',
+              country: dto.country ?? 'RW',
+            }),
+          }
+        : {}),
       city: dto.city,
       country: dto.country,
       deliveryEstimateDays: dto.deliveryEstimateDays,
@@ -1757,5 +1779,23 @@ export class ListingsService {
     });
 
     return { message: 'Removed from wishlist' };
+  }
+
+  private resolveVehicleLocation(dto: {
+    vehicleLocation?: string;
+    city: string;
+    country: string;
+  }): string {
+    const trimmed = dto.vehicleLocation?.trim();
+    if (trimmed) return trimmed;
+
+    const countryLabel =
+      dto.country === 'CN'
+        ? 'China'
+        : dto.country === 'RW'
+          ? 'Rwanda'
+          : dto.country;
+
+    return `${dto.city}, ${countryLabel}`;
   }
 }

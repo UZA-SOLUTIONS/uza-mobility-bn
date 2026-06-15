@@ -3,6 +3,7 @@ import type {
   ConditionLevel,
   DrivetrainType,
   PowertrainType,
+  RegistrationStatus,
   SteeringPosition,
   UseCase,
   VerificationLevel,
@@ -45,7 +46,7 @@ export type ListingSeedVehicle = {
   warrantyDetails: string;
   hasAccidentHistory: boolean;
   ownershipCount: number;
-  registrationStatus: string;
+  registrationStatus: RegistrationStatus;
   vehicleLocation: string;
   city: string;
   country: string;
@@ -86,7 +87,7 @@ export const listingSeedVehicles: ListingSeedVehicle[] = [
     warrantyDetails: '6-month UZA battery health guarantee on verified pack.',
     hasAccidentHistory: false,
     ownershipCount: 1,
-    registrationStatus: 'Registered in Rwanda',
+    registrationStatus: 'REGISTERED',
     vehicleLocation: 'UZA Kigali showroom — Nyarutarama',
     city: 'Kigali',
     country: 'RW',
@@ -137,7 +138,7 @@ export const listingSeedVehicles: ListingSeedVehicle[] = [
     warrantyDetails: 'Manufacturer warranty plus UZA delivery support.',
     hasAccidentHistory: false,
     ownershipCount: 0,
-    registrationStatus: 'Ready for first registration',
+    registrationStatus: 'READY_FOR_REGISTRATION',
     vehicleLocation: 'UZA Kigali showroom — Nyarutarama',
     city: 'Kigali',
     country: 'RW',
@@ -187,7 +188,7 @@ export const listingSeedVehicles: ListingSeedVehicle[] = [
     warrantyDetails: '90-day UZA powertrain support on imported unit.',
     hasAccidentHistory: false,
     ownershipCount: 2,
-    registrationStatus: 'Registered in Rwanda',
+    registrationStatus: 'REGISTERED',
     vehicleLocation: 'UZA Kigali showroom — Nyarutarama',
     city: 'Kigali',
     country: 'RW',
@@ -239,7 +240,7 @@ export const listingSeedVehicles: ListingSeedVehicle[] = [
     warrantyDetails: '12-month UZA battery assurance on inspected pack.',
     hasAccidentHistory: false,
     ownershipCount: 1,
-    registrationStatus: 'Registered in Rwanda',
+    registrationStatus: 'REGISTERED',
     vehicleLocation: 'UZA Kigali showroom — Nyarutarama',
     city: 'Kigali',
     country: 'RW',

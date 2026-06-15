@@ -14,6 +14,11 @@ export class CalculatePriceDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
+  pricingRuleId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsNumber()
   @Min(0)
   basePriceUsd?: number;

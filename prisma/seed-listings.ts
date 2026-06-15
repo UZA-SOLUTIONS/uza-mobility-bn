@@ -14,8 +14,8 @@ import { publicUploadUrlForPath } from '../src/common/uploads/storage.paths';
 import { UploadFolder } from '../src/common/uploads/upload.constants';
 import { listingSeedVehicles } from './listings.seed-data';
 
-const ADMIN_EMAIL = 'admin@uza.local';
 const DOCS_IMAGES_DIR = join(process.cwd(), 'docs', 'images');
+
 async function uploadSeedImagesToGridFs(): Promise<Map<string, string>> {
   const uri = process.env.MONGODB_URI?.trim();
   if (!uri) {
@@ -100,15 +100,22 @@ function rwandaStockPricing(basePriceUsd: number, discountUsd = 0) {
 }
 
 export async function seedListings(prisma: PrismaClient) {
+  const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim();
+  if (!adminEmail) {
+    console.log('⏭️  Skipping sample listings (SEED_ADMIN_EMAIL not set)');
+    return;
+  }
+
   const adminUser = await prisma.user.findUnique({
-    where: { email: ADMIN_EMAIL },
+    where: { email: adminEmail },
     select: { id: true },
   });
 
   if (!adminUser) {
-    throw new Error(
-      `Admin user ${ADMIN_EMAIL} not found — run main seed before listing seed`,
+    console.log(
+      `⏭️  Skipping sample listings (admin user ${adminEmail} not found)`,
     );
+    return;
   }
 
   const seller = await prisma.seller.findUnique({
@@ -122,9 +129,10 @@ export async function seedListings(prisma: PrismaClient) {
   });
 
   if (!seller) {
-    throw new Error(
-      'UZA Rwanda Stock seller profile for admin not found — run main seed first',
+    console.log(
+      '⏭️  Skipping sample listings (UZA Rwanda Stock seller profile not found)',
     );
+    return;
   }
 
   const photoUrlsByFile = await uploadSeedImagesToGridFs();

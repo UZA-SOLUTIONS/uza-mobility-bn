@@ -11,15 +11,13 @@ const DEFAULT_RULES: Array<{
   clearingFeeUsd?: number;
   platformMarginPercent?: number;
   commissionRate?: number;
-  exchangeRateRwf?: number;
   deliveryDaysMin?: number;
   deliveryDaysMax?: number;
 }> = [
   {
     sellerType: 'UZA_RWANDA_STOCK',
-    exchangeRateRwf: 1300,
     deliveryDaysMin: 1,
-    deliveryDaysMax: 2,
+    deliveryDaysMax: 4,
   },
   {
     sellerType: 'UZA_CHINA_SOURCING',
@@ -30,14 +28,12 @@ const DEFAULT_RULES: Array<{
     storagePerDayUsd: 25,
     clearingFeeUsd: 450,
     platformMarginPercent: 12,
-    exchangeRateRwf: 1300,
-    deliveryDaysMin: 42,
-    deliveryDaysMax: 56,
+    deliveryDaysMin: 45,
+    deliveryDaysMax: 60,
   },
   {
     sellerType: 'LOCAL_SELLER',
     commissionRate: 0.05,
-    exchangeRateRwf: 1300,
     deliveryDaysMin: 2,
     deliveryDaysMax: 5,
   },
@@ -47,7 +43,6 @@ const DEFAULT_RULES: Array<{
     localChargesUsd: 600,
     taxRatePercent: 15,
     platformMarginPercent: 10,
-    exchangeRateRwf: 1300,
     deliveryDaysMin: 42,
     deliveryDaysMax: 70,
   },
