@@ -345,6 +345,21 @@ export class InquiriesService {
       `Hello UZA Mobility, my ${intent === InquiryIntent.BUY ? 'purchase' : 'booking'} reference is ${quoteNumber}`,
     );
 
+    const registerParams = new URLSearchParams({ email });
+    const nameParts = name.trim().split(/\s+/).filter(Boolean);
+    if (nameParts[0]) registerParams.set('firstName', nameParts[0]);
+    if (nameParts.length > 1) {
+      registerParams.set('lastName', nameParts.slice(1).join(' '));
+    }
+    if (intent === InquiryIntent.BUY) {
+      registerParams.set(
+        'callbackUrl',
+        `/my/invoices?listingId=${listing.id}&slug=${listing.slug}&request=1`,
+      );
+    } else {
+      registerParams.set('callbackUrl', `/vehicles/${listing.slug}`);
+    }
+
     const { subject, html, text } = buildCommerceConfirmationEmail({
       appName,
       frontendUrl,
@@ -355,6 +370,8 @@ export class InquiriesService {
       company,
       bookingFeeUsd,
       whatsappUrl,
+      accountActionUrl: `${frontendUrl}/register?${registerParams.toString()}`,
+      accountActionLabel: 'Create your account',
       footerReason: `You are receiving this email because you submitted a vehicle ${intent === InquiryIntent.BUY ? 'purchase' : 'booking'} inquiry on ${appName}.`,
     });
 

@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { AuthTokenType } from '@prisma/client';
+import { AuthTokenType, SellerType } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
@@ -48,6 +49,9 @@ const RESEND_VERIFICATION_MESSAGE =
 const EMAIL_NOT_VERIFIED_MESSAGE =
   'Your email is not verified yet. Please check your inbox for the verification email or request a new verification link.';
 
+const LINK_EXISTING_GOOGLE_ACCOUNT_MESSAGE =
+  'Check your email for a link to finish setting up sign-in with email and password. You can also use Google sign-in with this address.';
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -68,7 +72,26 @@ export class AuthService {
     auditContext: RequestAuditContext = {},
   ): Promise<RegisterResponseDto> {
     const email = normalizeAuthEmail(dto.email);
-    await this.usersService.ensureEmailIsAvailable(email);
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      include: {
+        roles: { include: { role: true } },
+        sellers: { select: { sellerType: true } },
+        operatorProfile: { select: { id: true } },
+      },
+    });
+
+    if (existingUser && !existingUser.deletedAt && existingUser.isActive) {
+      if (existingUser.googleId) {
+        return this.linkGoogleAccountToEmailPassword(
+          existingUser,
+          dto,
+          auditContext,
+        );
+      }
+
+      throw new ConflictException('Email already in use');
+    }
 
     const passwordHash = this.hashPassword(dto.password);
     const createdUser = await this.usersService.createUser({
@@ -370,6 +393,7 @@ export class AuthService {
         where: { id: record.id },
         data: { usedAt: new Date() },
       });
+      await this.linkGuestActivityToUser(record.userId, record.user.email);
       return { message: 'Email is already verified' };
     }
 
@@ -383,6 +407,8 @@ export class AuthService {
         data: { usedAt: new Date() },
       }),
     ]);
+
+    await this.linkGuestActivityToUser(record.userId, record.user.email);
 
     return { message: 'Email verified successfully' };
   }
@@ -554,6 +580,11 @@ export class AuthService {
     }
   }
 
+  /**
+   * Attach guest-submitted records (same email, no user yet) to a signed-in user.
+   * Inquiries and fleet requests are linked immediately; buy inquiries become
+   * invoices once the buyer profile exists (see fulfillPendingBuyInquiries).
+   */
   private async linkGuestActivityToUser(
     userId: string,
     email: string,
@@ -575,6 +606,60 @@ export class AuthService {
       strict: false,
     });
     await invoicesService?.fulfillPendingBuyInquiries(userId);
+  }
+
+  private async linkGoogleAccountToEmailPassword(
+    user: {
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      phone: string | null;
+      googleId: string | null;
+      roles: Array<{ role: { name: string } }>;
+      sellers: Array<{ sellerType: SellerType }>;
+      operatorProfile: { id: string } | null;
+    },
+    dto: RegisterDto,
+    auditContext: RequestAuditContext,
+  ): Promise<RegisterResponseDto> {
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        phone: user.phone ?? dto.phone,
+        firstName: user.firstName || dto.firstName,
+        lastName: user.lastName || dto.lastName,
+      },
+    });
+
+    await this.linkGuestActivityToUser(user.id, user.email);
+
+    const roleNames = user.roles.map((role) => role.role.name);
+    const permissions =
+      await this.rbacService.resolvePermissionsForRoleNames(roleNames);
+    const workspaceContext: AuthWorkspaceContext = {
+      roleNames,
+      permissions,
+      sellers: user.sellers,
+      hasOperatorProfile: user.operatorProfile != null,
+    };
+
+    await this.sendPasswordResetEmail(user, workspaceContext);
+
+    await this.auditService.record({
+      userId: user.id,
+      action: 'auth:link-google-to-password',
+      entity: 'User',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: { email: user.email },
+    });
+
+    return {
+      message: LINK_EXISTING_GOOGLE_ACCOUNT_MESSAGE,
+      email: user.email,
+      linkedExistingAccount: true,
+    };
   }
 
   private hashPassword(password: string): string {
