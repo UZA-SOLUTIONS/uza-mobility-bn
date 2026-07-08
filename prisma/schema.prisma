@@ -545,6 +545,7 @@ model PricingRule {
   clearingFeeUsd   Float?
   platformMarginPercent Float?
   commissionRate   Float?
+  discountRatePercent Float?
   deliveryDaysMin  Int?
   deliveryDaysMax  Int?
   isActive         Boolean    @default(true)
@@ -572,6 +573,7 @@ model ListingPricing {
   landingCostUsd        Float?
   marginUsd             Float?
   commissionUsd         Float?
+  ruleDiscountUsd       Float?
   discountUsd           Float?
   finalPriceUsd         Float
   currency              String   @default("USD")
@@ -674,6 +676,7 @@ model Invoice {
   clearingFeeUsd    Float?
   landingCostUsd    Float?
   marginUsd         Float?
+  ruleDiscountUsd   Float?
   discountUsd       Float?
   totalAmountUsd    Float
   currency          String        @default("USD")

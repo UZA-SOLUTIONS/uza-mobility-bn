@@ -22,6 +22,7 @@ export function snapshotPricingFields(pricing: ListingPricing | null) {
     clearingFeeUsd: pricing.clearingFeeUsd,
     landingCostUsd: pricing.landingCostUsd,
     marginUsd: pricing.marginUsd,
+    ruleDiscountUsd: pricing.ruleDiscountUsd,
     discountUsd: pricing.discountUsd,
     totalAmountUsd,
     currency: pricing.currency ?? 'USD',

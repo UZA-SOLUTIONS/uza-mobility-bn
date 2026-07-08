@@ -25,6 +25,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { FilterPaymentsDto } from './dto/filter-payments.dto';
 import { MarkPartialPaymentDto } from './dto/partial-payment.dto';
 import { RejectPaymentDto } from './dto/reject-payment.dto';
+import { adminPaymentInvoiceSelect, mapAdminPayments } from './payment.mapper';
 import type { SubmitPaymentPayload } from './dto/payment-write.types';
 import { canPaymentTransition } from './payment-transitions';
 
@@ -422,12 +423,7 @@ export class PaymentsService {
         take: limit,
         include: {
           invoice: {
-            select: {
-              invoiceNumber: true,
-              paymentReference: true,
-              totalAmountUsd: true,
-              status: true,
-            },
+            select: adminPaymentInvoiceSelect,
           },
           proofs: true,
         },
@@ -436,7 +432,7 @@ export class PaymentsService {
     ]);
 
     return {
-      items: rows,
+      items: await mapAdminPayments(this.prisma, rows),
       meta: {
         total,
         page,

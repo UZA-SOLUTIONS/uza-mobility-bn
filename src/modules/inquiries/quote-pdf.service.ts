@@ -6,6 +6,7 @@ import { HtmlToPdfService } from '../../common/pdf/html-to-pdf.service';
 import { toAbsoluteUploadUrl } from '../../common/uploads/storage.paths';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { parseDiscountRatePercentFromPriceNotes } from '../listings/listing-pricing.util';
 import type { InquiryListingContext } from './inquiry.mapper';
 import { QuoteStorageService } from './quote-storage.service';
 
@@ -429,13 +430,33 @@ export class QuotePdfService {
         },
         { label: 'Estimated landing cost', amount: p?.landingCostUsd ?? 0 },
         { label: 'UZA service margin', amount: p?.marginUsd ?? 0 },
-        { label: 'TOTAL VEHICLE PRICE', amount: totalUsd, total: true },
       );
-    } else if (listing.sellerType === SellerType.UZA_RWANDA_STOCK) {
-      const discount = p?.discountUsd ?? 0;
-      rows.push({ label: 'Vehicle price', amount: totalUsd + discount });
+      const discount = p?.ruleDiscountUsd ?? 0;
+      const legacyListingDiscount = p?.discountUsd ?? 0;
+      const discountLabel = this.discountLabel(p?.priceNotes);
       if (discount > 0) {
-        rows.push({ label: 'Discount', amount: -discount });
+        rows.push({ label: discountLabel, amount: -discount });
+      } else if (legacyListingDiscount > 0) {
+        rows.push({ label: discountLabel, amount: -legacyListingDiscount });
+      }
+      rows.push({
+        label: 'TOTAL VEHICLE PRICE',
+        amount: totalUsd,
+        total: true,
+      });
+    } else if (listing.sellerType === SellerType.UZA_RWANDA_STOCK) {
+      const discount = p?.ruleDiscountUsd ?? 0;
+      const legacyListingDiscount = p?.discountUsd ?? 0;
+      const totalDiscount = discount + legacyListingDiscount;
+      rows.push({
+        label: 'Vehicle price',
+        amount: totalUsd + totalDiscount,
+      });
+      if (totalDiscount > 0) {
+        rows.push({
+          label: this.discountLabel(p?.priceNotes),
+          amount: -totalDiscount,
+        });
       }
       rows.push({
         label: 'TOTAL VEHICLE PRICE',
@@ -465,5 +486,12 @@ export class QuotePdfService {
     }
 
     return rows;
+  }
+
+  private discountLabel(priceNotes: string | null | undefined): string {
+    const rate = parseDiscountRatePercentFromPriceNotes(priceNotes);
+    if (rate == null) return 'Discount';
+    const formatted = Number.isInteger(rate) ? String(rate) : rate.toFixed(2);
+    return `Discount (${formatted}%)`;
   }
 }

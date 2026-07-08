@@ -66,6 +66,14 @@ export class CreatePricingRuleDto {
   @IsNumber()
   commissionRate?: number;
 
+  @ApiPropertyOptional({
+    description:
+      'Percentage discount applied from the pricing rule before listing discount',
+  })
+  @IsOptional()
+  @IsNumber()
+  discountRatePercent?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)

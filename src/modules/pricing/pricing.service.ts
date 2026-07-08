@@ -10,6 +10,7 @@ import { CalculatePriceDto } from './dto/calculate-price.dto';
 import { CreatePricingRuleDto } from './dto/create-pricing-rule.dto';
 import { UpdatePricingRuleDto } from './dto/update-pricing-rule.dto';
 import type { PriceBreakdown, PricingInput } from './pricing.types';
+import { applyRuleAndListingDiscounts } from './pricing-discount.util';
 
 @Injectable()
 export class PricingService {
@@ -93,13 +94,18 @@ export class PricingService {
     rule: PricingRule,
   ): PriceBreakdown {
     const base = input.basePriceUsd ?? 0;
-    const discount = input.discountUsd ?? 0;
-    const final = base - discount;
+    const discounts = applyRuleAndListingDiscounts(
+      base,
+      rule,
+      input.discountUsd,
+    );
     return {
       sellerType: 'UZA_RWANDA_STOCK',
       basePriceUsd: base,
-      discountUsd: discount,
-      finalPriceUsd: final,
+      ruleDiscountUsd: discounts.ruleDiscountUsd,
+      ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
+      discountUsd: discounts.discountUsd,
+      finalPriceUsd: discounts.finalPriceUsd,
       deliveryDaysMin: rule.deliveryDaysMin ?? 1,
       deliveryDaysMax: rule.deliveryDaysMax ?? 2,
       currency: 'USD',
@@ -119,8 +125,12 @@ export class PricingService {
     const clearing = rule.clearingFeeUsd ?? 0;
     const landing = fob + ship + local + taxes + insure + storage + clearing;
     const margin = landing * ((rule.platformMarginPercent ?? 0) / 100);
-    const discount = input.discountUsd ?? 0;
-    const final = landing + margin - discount;
+    const preDiscount = landing + margin;
+    const discounts = applyRuleAndListingDiscounts(
+      preDiscount,
+      rule,
+      input.discountUsd,
+    );
     return {
       sellerType: 'UZA_CHINA_SOURCING',
       fobPriceUsd: fob,
@@ -132,8 +142,11 @@ export class PricingService {
       clearingFeeUsd: clearing,
       landingCostUsd: landing,
       marginUsd: margin,
-      discountUsd: discount,
-      finalPriceUsd: final,
+      platformMarginRatePercent: rule.platformMarginPercent ?? undefined,
+      ruleDiscountUsd: discounts.ruleDiscountUsd,
+      ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
+      discountUsd: discounts.discountUsd,
+      finalPriceUsd: discounts.finalPriceUsd,
       deliveryDaysMin: rule.deliveryDaysMin ?? 42,
       deliveryDaysMax: rule.deliveryDaysMax ?? 56,
       currency: 'USD',
@@ -148,14 +161,19 @@ export class PricingService {
     const rate = rule.commissionRate ?? 0.05;
     const finalPrice = payout / (1 - rate);
     const commission = finalPrice - payout;
-    const discount = input.discountUsd ?? 0;
-    const final = finalPrice - discount;
+    const discounts = applyRuleAndListingDiscounts(
+      finalPrice,
+      rule,
+      input.discountUsd,
+    );
     return {
       sellerType: 'LOCAL_SELLER',
       sellerDesiredPayoutUsd: payout,
       commissionUsd: commission,
-      discountUsd: discount,
-      finalPriceUsd: final,
+      ruleDiscountUsd: discounts.ruleDiscountUsd,
+      ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
+      discountUsd: discounts.discountUsd,
+      finalPriceUsd: discounts.finalPriceUsd,
       deliveryDaysMin: rule.deliveryDaysMin ?? 2,
       deliveryDaysMax: rule.deliveryDaysMax ?? 5,
       currency: 'USD',
@@ -172,8 +190,12 @@ export class PricingService {
     const taxes = (fob + route) * ((rule.taxRatePercent ?? 0) / 100);
     const margin =
       (fob + route + local + taxes) * ((rule.platformMarginPercent ?? 0) / 100);
-    const discount = input.discountUsd ?? 0;
-    const final = fob + route + local + taxes + margin - discount;
+    const preDiscount = fob + route + local + taxes + margin;
+    const discounts = applyRuleAndListingDiscounts(
+      preDiscount,
+      rule,
+      input.discountUsd,
+    );
     return {
       sellerType: 'INTERNATIONAL_SELLER',
       fobPriceUsd: fob,
@@ -181,8 +203,11 @@ export class PricingService {
       localChargesUsd: local,
       taxesEstimateUsd: taxes,
       marginUsd: margin,
-      discountUsd: discount,
-      finalPriceUsd: final,
+      platformMarginRatePercent: rule.platformMarginPercent ?? undefined,
+      ruleDiscountUsd: discounts.ruleDiscountUsd,
+      ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
+      discountUsd: discounts.discountUsd,
+      finalPriceUsd: discounts.finalPriceUsd,
       deliveryDaysMin: rule.deliveryDaysMin ?? 42,
       deliveryDaysMax: rule.deliveryDaysMax ?? 70,
       currency: 'USD',

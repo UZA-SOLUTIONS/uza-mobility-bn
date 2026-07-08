@@ -94,10 +94,26 @@ export function breakdownToListingPricingCreate(
     landingCostUsd: breakdown.landingCostUsd,
     marginUsd: breakdown.marginUsd,
     commissionUsd: breakdown.commissionUsd,
+    ruleDiscountUsd: breakdown.ruleDiscountUsd,
     discountUsd: breakdown.discountUsd,
     finalPriceUsd: breakdown.finalPriceUsd,
     currency: breakdown.currency,
-    priceNotes: pricingRuleId ? JSON.stringify({ pricingRuleId }) : undefined,
+    priceNotes: pricingRuleId
+      ? JSON.stringify({
+          pricingRuleId,
+          ...(breakdown.platformMarginRatePercent != null
+            ? {
+                platformMarginPercentApplied:
+                  breakdown.platformMarginRatePercent,
+              }
+            : {}),
+          ...(breakdown.ruleDiscountRatePercent != null
+            ? {
+                discountRatePercentApplied: breakdown.ruleDiscountRatePercent,
+              }
+            : {}),
+        })
+      : undefined,
   };
 }
 
@@ -112,6 +128,21 @@ export function parsePricingRuleIdFromPriceNotes(
   try {
     const parsed = JSON.parse(priceNotes) as { pricingRuleId?: string };
     return parsed.pricingRuleId;
+  } catch {
+    return undefined;
+  }
+}
+
+export function parseDiscountRatePercentFromPriceNotes(
+  priceNotes: string | null | undefined,
+): number | undefined {
+  if (!priceNotes) return undefined;
+  try {
+    const parsed = JSON.parse(priceNotes) as {
+      discountRatePercentApplied?: number;
+    };
+    const rate = parsed.discountRatePercentApplied;
+    return typeof rate === 'number' && rate > 0 ? rate : undefined;
   } catch {
     return undefined;
   }
