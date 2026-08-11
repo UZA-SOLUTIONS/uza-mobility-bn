@@ -18,6 +18,7 @@ import { generateReferenceNumber } from '../../common/utils/reference-number.uti
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ExchangeRateService } from '../platform-settings/exchange-rate.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -33,7 +34,11 @@ import {
   INVOICE_VALIDITY_DAYS,
   PAYABLE_INVOICE_STATUSES,
 } from './invoice.constants';
-import { snapshotPricingFields, toBuyerInvoice } from './invoice.mapper';
+import {
+  snapshotPricingFields,
+  toBuyerInvoice,
+  withPaymentAccountsFallback,
+} from './invoice.mapper';
 import { InvoicePdfService } from './invoice-pdf.service';
 
 @Injectable()
@@ -41,6 +46,7 @@ export class InvoicesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly platformSettingsService: PlatformSettingsService,
+    private readonly exchangeRateService: ExchangeRateService,
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
     private readonly invoicePdfService: InvoicePdfService,
@@ -89,10 +95,6 @@ export class InvoicesService {
       );
     }
 
-    if (listing.isBooked) {
-      throw new BadRequestException('This vehicle is booked by another buyer');
-    }
-
     const userActiveInvoice = await this.prisma.invoice.findFirst({
       where: {
         listingId: listing.id,
@@ -113,8 +115,10 @@ export class InvoicesService {
     ]);
 
     const validUntil = this.addDays(new Date(), INVOICE_VALIDITY_DAYS);
-    const company =
-      await this.platformSettingsService.getCompanyPaymentDetails();
+    const [company, exchangeRate] = await Promise.all([
+      this.platformSettingsService.getCompanyPaymentDetails(),
+      this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
+    ]);
 
     const totalAmountUsd = listing.listingPricing.finalPriceUsd;
 
@@ -142,8 +146,11 @@ export class InvoicesService {
           verificationLevel: listing.verificationLevel,
           ...snapshotPricingFields(listing.listingPricing),
           beneficiaryName: company.legalName,
-          bankName: company.bankName,
-          accountNumber: company.accountNumber,
+          bankName: company.usd.bankName,
+          accountNumber: company.usd.accountNumber,
+          rwfBankName: company.rwf.bankName,
+          rwfAccountNumber: company.rwf.accountNumber,
+          exchangeRateUsed: exchangeRate.usdToRwfEffective,
           paymentDeadline: validUntil,
           validUntil,
           notes: dto.notes,
@@ -187,6 +194,7 @@ export class InvoicesService {
       intent: InquiryIntent.BUY,
       company,
       bookingFeeUsd,
+      usdToRwfEffective: exchangeRate.usdToRwfEffective,
       accountActionUrl: `${frontendUrl}/my/invoices?highlight=${invoice.id}`,
       accountActionLabel: 'View my invoice',
       footerReason: `You are receiving this email because you requested a vehicle purchase invoice on ${appName}.`,
@@ -218,7 +226,7 @@ export class InvoicesService {
       },
     });
 
-    return toBuyerInvoice(invoice);
+    return toBuyerInvoice(withPaymentAccountsFallback(invoice, company));
   }
 
   /** Create invoices for linked guest buy inquiries once the buyer can trade. */
@@ -327,7 +335,9 @@ export class InvoicesService {
       throw new ForbiddenException('You do not have access to this invoice');
     }
 
-    return toBuyerInvoice(invoice);
+    const company =
+      await this.platformSettingsService.getCompanyPaymentDetails();
+    return toBuyerInvoice(withPaymentAccountsFallback(invoice, company));
   }
 
   async createFleetInvoice(
@@ -348,8 +358,10 @@ export class InvoicesService {
     ]);
 
     const validUntil = this.addDays(new Date(), INVOICE_VALIDITY_DAYS);
-    const company =
-      await this.platformSettingsService.getCompanyPaymentDetails();
+    const [company, exchangeRate] = await Promise.all([
+      this.platformSettingsService.getCompanyPaymentDetails(),
+      this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
+    ]);
 
     const invoice = await this.prisma.invoice.create({
       data: {
@@ -368,8 +380,11 @@ export class InvoicesService {
         totalAmountUsd: dto.totalAmountUsd,
         currency: 'USD',
         beneficiaryName: company.legalName,
-        bankName: company.bankName,
-        accountNumber: company.accountNumber,
+        bankName: company.usd.bankName,
+        accountNumber: company.usd.accountNumber,
+        rwfBankName: company.rwf.bankName,
+        rwfAccountNumber: company.rwf.accountNumber,
+        exchangeRateUsed: exchangeRate.usdToRwfEffective,
         paymentDeadline: validUntil,
         validUntil,
         notes: dto.notes,
@@ -400,7 +415,7 @@ export class InvoicesService {
       },
     });
 
-    return toBuyerInvoice(invoice);
+    return toBuyerInvoice(withPaymentAccountsFallback(invoice, company));
   }
 
   async cancelInvoiceByBuyer(
@@ -555,7 +570,7 @@ export class InvoicesService {
     const limit = filters.limit ?? 25;
     const skip = (page - 1) * limit;
 
-    const [rows, total] = await Promise.all([
+    const [rows, total, company] = await Promise.all([
       this.prisma.invoice.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -573,10 +588,13 @@ export class InvoicesService {
           : {}),
       }),
       this.prisma.invoice.count({ where }),
+      this.platformSettingsService.getCompanyPaymentDetails(),
     ]);
 
     return {
-      items: rows.map(toBuyerInvoice),
+      items: rows.map((invoice) =>
+        toBuyerInvoice(withPaymentAccountsFallback(invoice, company)),
+      ),
       meta: {
         total,
         page,

@@ -12,9 +12,19 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FilterOrdersDto } from './dto/filter-orders.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import {
+  AssignOrderFulfillmentDto,
+  UpsertShipmentDto,
+} from './dto/fulfillment.dto';
 import { orderDetailInclude } from './orders.constants';
-import { getNextOrderStatus, ORDER_STAGES, STAGE_LABELS } from './order-stages';
+import {
+  getNextOrderStatus,
+  ORDER_STAGES,
+  STAGE_BUYER_MESSAGES,
+  STAGE_LABELS,
+} from './order-stages';
 import { SustainabilityService } from '../sustainability/sustainability.service';
+import { toAbsoluteUploadUrl } from '../../common/uploads/storage.paths';
 
 @Injectable()
 export class OrdersService {
@@ -163,6 +173,10 @@ export class OrdersService {
       throw new BadRequestException('Order is already at final stage');
     }
 
+    const previousStatus = order.status;
+    const adminNote = dto.description?.trim() || null;
+    const location = dto.location?.trim() || null;
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.order.update({
         where: { id: orderId },
@@ -179,8 +193,8 @@ export class OrdersService {
           orderId,
           stage: next,
           title: STAGE_LABELS[next],
-          description: dto.description,
-          location: dto.location,
+          description: adminNote,
+          location,
           performedBy: adminUserId,
         },
       });
@@ -192,14 +206,32 @@ export class OrdersService {
       await this.sustainabilityService.recordDelivery(orderId);
     }
 
+    const bodyParts = [
+      `Your order ${order.orderNumber} moved from ${STAGE_LABELS[previousStatus]} to ${STAGE_LABELS[next]}.`,
+      STAGE_BUYER_MESSAGES[next],
+    ];
+    if (location) {
+      bodyParts.push(`Location: ${location}`);
+    }
+    if (adminNote) {
+      bodyParts.push(`Note from our team: ${adminNote}`);
+    }
+    bodyParts.push(
+      'You can track progress anytime in your UZA Mobility account.',
+    );
+
     await this.notificationsService.send({
       userId: order.userId,
       type: NotificationType.ORDER_STATUS_UPDATED,
-      title: STAGE_LABELS[next],
-      body:
-        dto.description ??
-        `Your order status has been updated to: ${STAGE_LABELS[next]}`,
-      metadata: { orderId, status: next },
+      title: `Order update: ${STAGE_LABELS[next]}`,
+      body: bodyParts.join('\n\n'),
+      emailSubject: `Order ${order.orderNumber}: ${STAGE_LABELS[next]}`,
+      metadata: {
+        orderId,
+        status: next,
+        from: previousStatus,
+        to: next,
+      },
     });
 
     await this.auditService.record({
@@ -211,12 +243,220 @@ export class OrdersService {
       metadata: {
         email: auditContext.actorEmail,
         orderNumber: order.orderNumber,
-        from: order.status,
+        from: previousStatus,
         to: next,
       },
     });
 
     return updated;
+  }
+
+  async upsertShipment(
+    dto: UpsertShipmentDto,
+    arrivalNoticeFileUrl?: string,
+    adminUserId?: string,
+    auditContext: RequestAuditContext = {},
+  ) {
+    const shipment = await this.prisma.shipment.create({
+      data: {
+        documentNumber: dto.documentNumber?.trim() || null,
+        vesselName: dto.vesselName?.trim() || null,
+        voyageNumber: dto.voyageNumber?.trim() || null,
+        etaAt: dto.etaAt ? new Date(dto.etaAt) : null,
+        portOfLoading: dto.portOfLoading?.trim() || null,
+        portOfDischarge: dto.portOfDischarge?.trim() || null,
+        terminalOfPickup: dto.terminalOfPickup?.trim() || null,
+        finalPlaceOfDelivery: dto.finalPlaceOfDelivery?.trim() || null,
+        containerNumber: dto.containerNumber?.trim() || null,
+        sealNumber: dto.sealNumber?.trim() || null,
+        carrierTrackUrl:
+          dto.carrierTrackUrl?.trim() ||
+          (dto.containerNumber?.trim()
+            ? `https://www.msc.com/track-a-shipment?query=${encodeURIComponent(dto.containerNumber.trim())}`
+            : null),
+        arrivalNoticeFileUrl: arrivalNoticeFileUrl
+          ? toAbsoluteUploadUrl(arrivalNoticeFileUrl)
+          : null,
+        notes: dto.notes?.trim() || null,
+      },
+    });
+
+    if (dto.orderIds?.length) {
+      await this.prisma.order.updateMany({
+        where: { id: { in: dto.orderIds } },
+        data: { shipmentId: shipment.id },
+      });
+    }
+
+    if (adminUserId) {
+      await this.auditService.record({
+        userId: adminUserId,
+        action: 'shipments:created',
+        entity: 'Shipment',
+        entityId: shipment.id,
+        ipAddress: auditContext.ipAddress,
+        userAgent: auditContext.userAgent,
+        metadata: {
+          containerNumber: shipment.containerNumber,
+          orderIds: dto.orderIds ?? [],
+        },
+      });
+    }
+
+    return shipment;
+  }
+
+  async assignFulfillment(
+    orderId: string,
+    dto: AssignOrderFulfillmentDto,
+    arrivalNoticeFileUrl: string | undefined,
+    adminUserId: string,
+    auditContext: RequestAuditContext = {},
+  ) {
+    const order = await this.getOrderOrThrow(orderId);
+    let shipmentId = dto.shipmentId ?? order.shipmentId ?? null;
+
+    if (dto.shipment) {
+      const shipment = await this.upsertShipment(
+        {
+          ...dto.shipment,
+          orderIds: [orderId, ...(dto.shipment.orderIds ?? [])],
+        },
+        arrivalNoticeFileUrl,
+        adminUserId,
+        auditContext,
+      );
+      shipmentId = shipment.id;
+    } else if (dto.shipmentId) {
+      const exists = await this.prisma.shipment.findUnique({
+        where: { id: dto.shipmentId },
+      });
+      if (!exists) {
+        throw new NotFoundException('Shipment not found');
+      }
+    }
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        vin: dto.vin.trim().toUpperCase(),
+        shipmentId,
+      },
+      include: orderDetailInclude,
+    });
+
+    await this.notificationsService.send({
+      userId: order.userId,
+      type: NotificationType.SHIPMENT_UPDATE,
+      title: 'Shipping details updated',
+      body: this.buildBuyerShipmentBody(updated),
+      metadata: {
+        orderId,
+        vin: updated.vin,
+        containerNumber: updated.shipment?.containerNumber,
+      },
+    });
+
+    await this.auditService.record({
+      userId: adminUserId,
+      action: 'orders:fulfillment-assigned',
+      entity: 'Order',
+      entityId: orderId,
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: { vin: updated.vin, shipmentId },
+    });
+
+    return updated;
+  }
+
+  async notifyPortArrival(orderId: string, adminUserId: string) {
+    const order = await this.getOrderOrThrow(orderId);
+    if (!order.shipment) {
+      throw new BadRequestException(
+        'Assign shipment / arrival notice details before notifying the buyer',
+      );
+    }
+
+    const body = this.buildBuyerShipmentBody(order, true);
+    await this.notificationsService.send({
+      userId: order.userId,
+      type: NotificationType.SHIPMENT_UPDATE,
+      title: 'Your vehicle has arrived at port',
+      body,
+      metadata: {
+        orderId,
+        vin: order.vin,
+        containerNumber: order.shipment.containerNumber,
+      },
+    });
+
+    await this.auditService.record({
+      userId: adminUserId,
+      action: 'orders:port-notified',
+      entity: 'Order',
+      entityId: orderId,
+    });
+
+    return {
+      order,
+      buyerEmail: order.user?.email ?? null,
+      message: body,
+    };
+  }
+
+  private buildBuyerShipmentBody(
+    order: {
+      listing?: { listingTitle?: string } | null;
+      vin?: string | null;
+      shipment?: {
+        containerNumber?: string | null;
+        vesselName?: string | null;
+        voyageNumber?: string | null;
+        etaAt?: Date | null;
+        portOfDischarge?: string | null;
+        terminalOfPickup?: string | null;
+        carrierTrackUrl?: string | null;
+      } | null;
+    },
+    atPort = false,
+  ): string {
+    const title = order.listing?.listingTitle ?? 'your vehicle';
+    const parts = [
+      atPort
+        ? `Good news — ${title} has an arrival notice at port.`
+        : `Shipping details for ${title} were updated.`,
+    ];
+    if (order.vin) parts.push(`VIN: ${order.vin}`);
+    if (order.shipment?.containerNumber) {
+      parts.push(`Container: ${order.shipment.containerNumber}`);
+    }
+    if (order.shipment?.vesselName) {
+      parts.push(
+        `Vessel: ${order.shipment.vesselName}${
+          order.shipment.voyageNumber ? ` / ${order.shipment.voyageNumber}` : ''
+        }`,
+      );
+    }
+    if (order.shipment?.etaAt) {
+      parts.push(`ETA: ${order.shipment.etaAt.toISOString().slice(0, 10)}`);
+    }
+    if (order.shipment?.portOfDischarge) {
+      parts.push(
+        `Port: ${order.shipment.portOfDischarge}${
+          order.shipment.terminalOfPickup
+            ? ` (${order.shipment.terminalOfPickup})`
+            : ''
+        }`,
+      );
+    }
+    if (order.shipment?.carrierTrackUrl) {
+      parts.push(`Track: ${order.shipment.carrierTrackUrl}`);
+    }
+    parts.push(
+      'Our team is arranging the next steps toward Kigali. Reply if you have questions.',
+    );
+    return parts.join(' ');
   }
 
   async cancelOrder(

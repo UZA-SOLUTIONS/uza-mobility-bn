@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { formatDualMoney } from '../../common/money/money-format.util';
 import { HtmlToPdfService } from '../../common/pdf/html-to-pdf.service';
+import { ExchangeRateService } from '../platform-settings/exchange-rate.service';
 import type {
   DiscountSaleRow,
   DiscountSalesSummary,
@@ -7,23 +9,25 @@ import type {
 
 @Injectable()
 export class DiscountSalesPdfService {
-  constructor(private readonly htmlToPdf: HtmlToPdfService) {}
+  constructor(
+    private readonly htmlToPdf: HtmlToPdfService,
+    private readonly exchangeRateService: ExchangeRateService,
+  ) {}
 
   async render(
     items: DiscountSaleRow[],
     summary: DiscountSalesSummary,
     filters: { from?: string; to?: string },
   ): Promise<Buffer> {
-    const html = this.buildHtml(items, summary, filters);
+    const rate = (
+      await this.exchangeRateService.getSnapshot({ refreshIfStale: false })
+    ).usdToRwfEffective;
+    const html = this.buildHtml(items, summary, filters, rate);
     return this.htmlToPdf.render(html);
   }
 
-  private formatUsd(value: number): string {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 2,
-    }).format(value);
+  private formatMoney(value: number, rate: number): string {
+    return formatDualMoney(value, rate, { unit: 'USDT', empty: '—' });
   }
 
   private formatDate(value: string | null): string {
@@ -47,6 +51,7 @@ export class DiscountSalesPdfService {
     items: DiscountSaleRow[],
     summary: DiscountSalesSummary,
     filters: { from?: string; to?: string },
+    rate: number,
   ): string {
     const period =
       filters.from || filters.to
@@ -60,10 +65,10 @@ export class DiscountSalesPdfService {
           <td>${this.formatDate(row.soldAt)}</td>
           <td>${this.escapeHtml([row.vehicleBrand, row.vehicleModel, row.vehicleYear].filter(Boolean).join(' '))}</td>
           <td>${this.escapeHtml(row.buyerName)}</td>
-          <td class="num">${this.formatUsd(row.ruleDiscountUsd)}</td>
-          <td class="num">${this.formatUsd(row.listingDiscountUsd)}</td>
-          <td class="num">${this.formatUsd(row.totalDiscountUsd)}</td>
-          <td class="num">${this.formatUsd(row.amountPaidUsd)}</td>
+          <td class="num">${this.formatMoney(row.ruleDiscountUsd, rate)}</td>
+          <td class="num">${this.formatMoney(row.listingDiscountUsd, rate)}</td>
+          <td class="num">${this.formatMoney(row.totalDiscountUsd, rate)}</td>
+          <td class="num">${this.formatMoney(row.amountPaidUsd, rate)}</td>
         </tr>`,
       )
       .join('');
@@ -79,7 +84,7 @@ export class DiscountSalesPdfService {
     .muted { color: #356769; margin-bottom: 24px; }
     .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
     .card { border: 1px solid #e9e9e9; border-radius: 8px; padding: 12px; }
-    .card strong { display: block; font-size: 16px; margin-top: 4px; }
+    .card strong { display: block; font-size: 14px; margin-top: 4px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border-bottom: 1px solid #e9e9e9; padding: 8px 6px; text-align: left; }
     th { color: #356769; font-weight: 600; }
@@ -91,9 +96,9 @@ export class DiscountSalesPdfService {
   <p class="muted">Period: ${this.escapeHtml(period)} · Generated ${this.escapeHtml(new Date().toLocaleString('en-US'))}</p>
   <div class="summary">
     <div class="card"><span class="muted">Vehicles sold with discount</span><strong>${summary.saleCount}</strong></div>
-    <div class="card"><span class="muted">Rule discounts</span><strong>${this.formatUsd(summary.totalRuleDiscountUsd)}</strong></div>
-    <div class="card"><span class="muted">Listing discounts</span><strong>${this.formatUsd(summary.totalListingDiscountUsd)}</strong></div>
-    <div class="card"><span class="muted">Total discount given</span><strong>${this.formatUsd(summary.totalDiscountUsd)}</strong></div>
+    <div class="card"><span class="muted">Rule discounts</span><strong>${this.formatMoney(summary.totalRuleDiscountUsd, rate)}</strong></div>
+    <div class="card"><span class="muted">Listing discounts</span><strong>${this.formatMoney(summary.totalListingDiscountUsd, rate)}</strong></div>
+    <div class="card"><span class="muted">Total discount given</span><strong>${this.formatMoney(summary.totalDiscountUsd, rate)}</strong></div>
   </div>
   <table>
     <thead>

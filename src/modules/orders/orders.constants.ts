@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 export const orderDetailInclude = {
   trackingEvents: { orderBy: { occurredAt: 'asc' as const } },
+  shipment: true,
   listing: {
     select: {
       id: true,
@@ -10,6 +11,7 @@ export const orderDetailInclude = {
       brand: true,
       model: true,
       manufacturingYear: true,
+      inventoryStage: true,
     },
   },
   invoice: {
@@ -18,6 +20,15 @@ export const orderDetailInclude = {
       invoiceNumber: true,
       paymentReference: true,
       totalAmountUsd: true,
+    },
+  },
+  user: {
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      phone: true,
     },
   },
 } satisfies Prisma.OrderInclude;

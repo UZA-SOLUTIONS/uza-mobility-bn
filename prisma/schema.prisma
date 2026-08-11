@@ -178,6 +178,14 @@ enum SellerType {
   INTERNATIONAL_SELLER  // Non-UZA seller outside Rwanda
 }
 
+/// Merchandising pipeline for catalog offers (not exclusive unit lock).
+enum ListingInventoryStage {
+  CHINA_UNPAID
+  IN_TRANSIT
+  AT_PORT
+  KIGALI_STOCK
+}
+
 enum SellerStatus {
   PENDING
   ACTIVE
@@ -388,6 +396,10 @@ model Listing {
   slug                String             @unique
   status              ListingStatus      @default(DRAFT)
   sellerType          SellerType
+  inventoryStage      ListingInventoryStage @default(KIGALI_STOCK)
+  inventoryPaidAt     DateTime?
+  portArrivedAt       DateTime?
+  kigaliArrivedAt     DateTime?
   brand               String
   model               String
   trim                String?
@@ -445,6 +457,7 @@ model Listing {
   inquiries           Inquiry[]
 
   @@index([status, sellerType])
+  @@index([inventoryStage])
   @@index([brand, model])
   @@index([country, city])
   @@map("listings")
@@ -681,10 +694,13 @@ model Invoice {
   totalAmountUsd    Float
   currency          String        @default("USD")
 
-  // Payment details
+  // Payment details (USD + Rwf receiving accounts snapshotted at issue)
   beneficiaryName   String?
   bankName          String?
   accountNumber     String?
+  rwfBankName       String?
+  rwfAccountNumber  String?
+  exchangeRateUsed  Float?
   paymentDeadline   DateTime?
   validUntil        DateTime?
   deliveryEstimate  String?
@@ -722,12 +738,13 @@ model Payment {
   id                String        @id @default(cuid())
   invoiceId         String
   amountPaid        Float
-  currency          String        @default("USD")
+  currency          String        @default("USD") // USD | RWF — amountPaid is in this currency
   bankName          String?
   transferReference String?
   paymentDate       DateTime?
   senderName        String?
   notes             String?
+  exchangeRateUsed  Float?        // effective USD→Rwf rate when paid in RWF (or snapshotted)
   status            PaymentStatus @default(SUBMITTED)
   verifiedBy        String?       // admin user id
   verifiedAt        DateTime?
@@ -776,7 +793,7 @@ model VehicleBooking {
   listingId         String
   userId            String
   bookingFeeUsd     Float
-  currency          String               @default("USD")
+  currency          String               @default("USD") // USD | RWF when proof submitted
   status            VehicleBookingStatus @default(AWAITING_PAYMENT)
   amountPaid        Float?
   bankName          String?
@@ -784,6 +801,7 @@ model VehicleBooking {
   paymentDate       DateTime?
   senderName        String?
   notes             String?
+  exchangeRateUsed  Float?
   rejectionReason   String?
   validUntil        DateTime?
   confirmedAt       DateTime?
@@ -894,6 +912,8 @@ model Order {
   invoiceId       String      @unique
   status          OrderStatus @default(INVOICE_ISSUED)
   sellerType      SellerType
+  vin             String?
+  shipmentId      String?
   deliveryAddress String?
   deliveryCity    String?
   deliveryCountry String      @default("RW")
@@ -906,9 +926,37 @@ model Order {
   user            User        @relation(fields: [userId], references: [id])
   listing         Listing     @relation(fields: [listingId], references: [id])
   invoice         Invoice     @relation(fields: [invoiceId], references: [id])
+  shipment        Shipment?   @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
   trackingEvents  OrderTrackingEvent[]
 
+  @@index([vin])
+  @@index([shipmentId])
   @@map("orders")
+}
+
+model Shipment {
+  id                    String    @id @default(cuid())
+  documentNumber        String?   // BL / arrival notice doc no
+  vesselName            String?
+  voyageNumber          String?
+  etaAt                 DateTime?
+  portOfLoading         String?
+  portOfDischarge       String?
+  terminalOfPickup      String?
+  finalPlaceOfDelivery  String?
+  containerNumber       String?
+  sealNumber            String?
+  carrierTrackUrl       String?
+  arrivalNoticeFileUrl  String?
+  notes                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  orders                Order[]
+
+  @@index([containerNumber])
+  @@index([documentNumber])
+  @@map("shipments")
 }
 
 model OrderTrackingEvent {
@@ -1512,6 +1560,7 @@ enum NotificationType {
   STATION_REJECTED
   STATION_SUSPENDED
   SYSTEM_ALERT
+  SHIPMENT_UPDATE
 }
 
 model Notification {

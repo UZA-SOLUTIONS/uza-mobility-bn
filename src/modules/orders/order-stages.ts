@@ -50,6 +50,30 @@ export const STAGE_LABELS: Record<OrderStatus, string> = {
   [OrderStatus.CANCELLED]: 'Cancelled',
 };
 
+/** Plain-language meaning for buyers when an order reaches this stage. */
+export const STAGE_BUYER_MESSAGES: Record<OrderStatus, string> = {
+  [OrderStatus.INVOICE_ISSUED]:
+    'Your invoice has been issued. Please complete payment when ready.',
+  [OrderStatus.PAYMENT_SUBMITTED]:
+    'We received your payment submission and are verifying it.',
+  [OrderStatus.PAYMENT_CONFIRMED]:
+    'Your payment has been verified. Your order is now being processed.',
+  [OrderStatus.VEHICLE_RESERVED]:
+    'Your vehicle has been reserved for you and is secured for this order.',
+  [OrderStatus.PROCESSING]:
+    'Our team is preparing your vehicle for the next fulfillment steps.',
+  [OrderStatus.IN_TRANSIT]:
+    'Your vehicle is in transit. We will update you when it reaches port.',
+  [OrderStatus.ARRIVED]:
+    'Your vehicle has arrived at port. Clearance and handover steps will follow.',
+  [OrderStatus.CLEARANCE]: 'Your vehicle is going through customs clearance.',
+  [OrderStatus.READY_FOR_HANDOVER]:
+    'Your vehicle is ready for handover. Our team will coordinate pickup or delivery with you.',
+  [OrderStatus.DELIVERED]:
+    'Your vehicle has been delivered. Thank you for choosing UZA Mobility.',
+  [OrderStatus.CANCELLED]: 'This order has been cancelled.',
+};
+
 export function getNextOrderStatus(
   sellerType: SellerType,
   current: OrderStatus,

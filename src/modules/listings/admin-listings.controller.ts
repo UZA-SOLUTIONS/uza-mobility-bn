@@ -41,6 +41,7 @@ import { parseMultipartPayload } from '../../common/uploads/parse-payload.util';
 import { multipartPayloadSchema } from '../../common/uploads/swagger-multipart.util';
 import { UploadFolder } from '../../common/uploads/upload.constants';
 import { UpdateVerificationDto } from './dto/update-verification.dto';
+import { AdvanceInventoryStageDto } from './dto/advance-inventory-stage.dto';
 import { ListingsService } from './listings.service';
 import { VerificationService } from './verification.service';
 
@@ -353,6 +354,21 @@ export class AdminListingsController {
         ctx,
       );
     });
+  }
+
+  @Patch(':id/inventory-stage')
+  @UseGuards(RolesGuard, PermissionsGuard)
+  @Roles('MARKETPLACE_ADMIN', 'SUPER_ADMIN', 'LOGISTICS_ADMIN')
+  @RequirePermission('listings:create')
+  @ApiOperation({ summary: 'Advance listing merchandising inventory stage' })
+  advanceInventoryStage(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: AdvanceInventoryStageDto,
+  ) {
+    return this.requireAdmin(request, (userId, ctx) =>
+      this.listingsService.advanceInventoryStage(id, dto.stage, userId, ctx),
+    );
   }
 
   @Delete(':id')

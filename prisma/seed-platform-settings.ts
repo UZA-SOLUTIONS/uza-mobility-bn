@@ -5,10 +5,19 @@ import {
 } from '../src/modules/platform-settings/platform-settings.constants';
 
 export async function seedPlatformSettings(prisma: PrismaClient) {
+  const seedKeys = [
+    'bookingFeeUsd',
+    'companyLegalName',
+    'companyBankName',
+    'companyAccountNumber',
+    'companyBankNameRwf',
+    'companyAccountNumberRwf',
+    'companyWhatsappNumber',
+    'rwfMarkupPercent',
+  ] as const;
+
   await Promise.all(
-    (Object.keys(DEFAULT_PLATFORM_SETTINGS) as Array<
-      keyof typeof DEFAULT_PLATFORM_SETTINGS
-    >).map((key) =>
+    seedKeys.map((key) =>
       prisma.platformSetting.upsert({
         where: { key: PLATFORM_SETTING_KEYS[key] },
         update: {},

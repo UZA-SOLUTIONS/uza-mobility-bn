@@ -1,5 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { ListingStatus, SellerType } from '@prisma/client';
+import {
+  ListingInventoryStage,
+  ListingStatus,
+  SellerType,
+} from '@prisma/client';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
@@ -18,6 +22,11 @@ export class AdminFilterListingsDto {
   @IsOptional()
   @IsEnum(SellerType)
   sellerType?: SellerType;
+
+  @ApiPropertyOptional({ enum: ListingInventoryStage })
+  @IsOptional()
+  @IsEnum(ListingInventoryStage)
+  inventoryStage?: ListingInventoryStage;
 
   @ApiPropertyOptional({ description: 'Search title, brand, or model' })
   @IsOptional()

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Patch,
+  Post,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -13,6 +14,7 @@ import type { AuthenticatedRequest } from '../../users/users.types';
 import { RequirePermission } from '../auth/decorators/permissions.decorator';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
+import { ExchangeRateService } from './exchange-rate.service';
 import { PlatformSettingsService } from './platform-settings.service';
 
 @ApiTags('admin')
@@ -21,6 +23,7 @@ import { PlatformSettingsService } from './platform-settings.service';
 export class AdminPlatformSettingsController {
   constructor(
     private readonly platformSettingsService: PlatformSettingsService,
+    private readonly exchangeRateService: ExchangeRateService,
   ) {}
 
   private requireAdmin(
@@ -55,6 +58,16 @@ export class AdminPlatformSettingsController {
   ) {
     return this.requireAdmin(request, (adminId, ctx) =>
       this.platformSettingsService.updateSettings(adminId, dto, ctx),
+    );
+  }
+
+  @Post('refresh-exchange-rate')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('platform-settings:manage')
+  @ApiOperation({ summary: 'Refresh USDT→RWF rate from ExchangeRate-API' })
+  refreshExchangeRate(@Req() request: AuthenticatedRequest) {
+    return this.requireAdmin(request, (adminId) =>
+      this.exchangeRateService.refreshFromApi(adminId),
     );
   }
 }

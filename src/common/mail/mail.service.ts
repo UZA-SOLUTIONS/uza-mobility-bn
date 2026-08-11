@@ -104,14 +104,22 @@ export class MailService implements OnModuleInit {
     actionLabel?: string;
   }): string {
     const brand = this.getEmailBrandDefaults(params.appName);
+    const paragraphs = params.body
+      .split(/\n+/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => `<p style="margin: 0 0 12px">${escapeHtml(part)}</p>`)
+      .join('');
 
     return buildBrandedEmailHtml({
       ...brand,
       logoUrl: '',
       headline: params.title,
-      bodyHtml: `<p style="margin: 0 0 12px">${escapeHtml(params.body)}</p>`,
+      bodyHtml:
+        paragraphs ||
+        `<p style="margin: 0 0 12px">You have a new update on ${escapeHtml(params.appName)}.</p>`,
       actionUrl: params.frontendUrl,
-      actionLabel: params.actionLabel ?? `Open ${params.appName}`,
+      actionLabel: params.actionLabel ?? 'View your account',
       footerReason: `You are receiving this email because you have an account or activity on ${params.appName}.`,
     });
   }

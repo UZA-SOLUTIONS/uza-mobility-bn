@@ -2,8 +2,11 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 import { InquiryIntent, SellerType } from '@prisma/client';
+import { formatDualBankAccountsHtml } from '../../common/money/dual-bank-accounts.util';
+import { formatDualMoney } from '../../common/money/money-format.util';
 import { HtmlToPdfService } from '../../common/pdf/html-to-pdf.service';
 import { toAbsoluteUploadUrl } from '../../common/uploads/storage.paths';
+import { ExchangeRateService } from '../platform-settings/exchange-rate.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { parseDiscountRatePercentFromPriceNotes } from '../listings/listing-pricing.util';
@@ -25,6 +28,7 @@ export class QuotePdfService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly platformSettingsService: PlatformSettingsService,
+    private readonly exchangeRateService: ExchangeRateService,
     private readonly htmlToPdf: HtmlToPdfService,
     private readonly quoteStorage: QuoteStorageService,
   ) {}
@@ -94,9 +98,10 @@ export class QuotePdfService {
     },
   ): Promise<string> {
     const isBuy = intent === InquiryIntent.BUY;
-    const [company, bookingFeeUsd] = await Promise.all([
+    const [company, bookingFeeUsd, exchangeRate] = await Promise.all([
       this.platformSettingsService.getCompanyPaymentDetails(),
       this.platformSettingsService.getBookingFeeUsd(),
+      this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
     ]);
     const issuedAt = new Date();
     const validUntil = new Date(issuedAt);
@@ -109,9 +114,10 @@ export class QuotePdfService {
     const ev = listing.evSpecs;
     const logoDataUri = this.readLogoDataUri();
     const vehicleImageDataUri = await this.resolveVehicleImageDataUri(listing);
+    const rate = exchangeRate.usdToRwfEffective;
 
     const formatMoney = (value: number) =>
-      `USD ${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+      formatDualMoney(value, rate, { unit: 'USDT', empty: '—' });
 
     const specLine = [
       listing.color,
@@ -249,13 +255,19 @@ export class QuotePdfService {
   <div class="payment">
     <strong>Payment instructions</strong><br />
     <p style="margin: 8px 0">${paymentIntro}</p>
-    Beneficiary: ${this.escapeHtml(company.legalName)}<br />
-    Bank: ${this.escapeHtml(company.bankName)}<br />
-    Account: ${this.escapeHtml(company.accountNumber)}<br />
-    Currency: USD<br />
+    ${formatDualBankAccountsHtml({
+      legalName: company.legalName,
+      usdBankName: company.usd.bankName,
+      usdAccountNumber: company.usd.accountNumber,
+      rwfBankName: company.rwf.bankName,
+      rwfAccountNumber: company.rwf.accountNumber,
+      escapeHtml: (value) => this.escapeHtml(value),
+      asLineBreaks: true,
+    })}
+    <br />
     <strong>${amountDueLabel}: ${formatMoney(amountDueNow)}</strong><br />
     <strong>Payment reference: ${quoteNumber}</strong> (include in your transfer)<br />
-    Method: TT bank transfer only
+    Method: TT bank transfer only — pay to either the USD or Rwf account
   </div>
 
   <div class="box">

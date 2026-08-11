@@ -23,6 +23,23 @@ class AdminUpdateListingExtrasDto {
   @IsString({ each: true })
   removePhotoIds?: string[];
 
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Ordered IDs of remaining existing photos (displayOrder). New uploads are appended after these.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  photoOrder?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Existing photo ID to set as the cover (primary) image',
+  })
+  @IsOptional()
+  @IsString()
+  primaryPhotoId?: string;
+
   @ApiPropertyOptional({ description: 'Remove the listing hero video' })
   @IsOptional()
   @IsBoolean()

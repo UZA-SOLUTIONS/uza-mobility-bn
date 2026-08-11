@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsDateString,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -12,15 +14,18 @@ export class SubmitPaymentDto {
   @IsString()
   invoiceId!: string;
 
-  @ApiProperty({ example: 28500 })
+  @ApiProperty({
+    example: 28500,
+    description: 'Amount transferred in the selected currency (USD or RWF)',
+  })
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   amountPaid!: number;
 
-  @ApiPropertyOptional({ default: 'USD' })
-  @IsOptional()
-  @IsString()
-  currency?: string;
+  @ApiProperty({ enum: ['USD', 'RWF'], default: 'USD' })
+  @IsIn(['USD', 'RWF'])
+  currency!: 'USD' | 'RWF';
 
   @ApiPropertyOptional()
   @IsOptional()

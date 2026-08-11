@@ -3,6 +3,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
   MinLength,
 } from 'class-validator';
@@ -31,6 +32,24 @@ export class UpdatePlatformSettingsDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
+  companyBankNameRwf?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  companyAccountNumberRwf?: string;
+
+  @IsOptional()
+  @IsString()
   @MinLength(8)
   companyWhatsappNumber?: string;
+
+  /** Static markup % applied on top of the API USDT→RWF rate. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  rwfMarkupPercent?: number;
 }

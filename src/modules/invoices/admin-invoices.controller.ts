@@ -71,7 +71,7 @@ export class AdminInvoicesController {
   @Get(':id/document')
   @UseGuards(PermissionsGuard)
   @RequirePermission('invoices:read')
-  @ApiOperation({ summary: 'Download invoice HTML document (admin)' })
+  @ApiOperation({ summary: 'Download invoice PDF document (admin)' })
   async document(
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,
@@ -81,12 +81,19 @@ export class AdminInvoicesController {
     if (!userId) {
       throw new UnauthorizedException();
     }
-    await this.invoicesService.findByIdForUser(userId, id, true);
-    const html = await this.invoicePdfService.readHtml(id);
-    if (!html) {
+    const invoice = await this.invoicesService.findByIdForUser(
+      userId,
+      id,
+      true,
+    );
+    const pdf = await this.invoicePdfService.readPdfBuffer(id);
+    if (!pdf) {
       throw new NotFoundException('Invoice document not found');
     }
-    res.type('text/html').send(html);
+    const filename = `${invoice.invoiceNumber.replace(/[^\w.-]+/g, '_')}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdf);
   }
 
   @Patch(':id/cancel')

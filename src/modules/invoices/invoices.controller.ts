@@ -102,23 +102,26 @@ export class InvoicesController {
   @Get(':id/document')
   @UseGuards(PermissionsGuard)
   @RequirePermission('invoices:create')
-  @ApiOperation({ summary: 'Download invoice HTML document' })
+  @ApiOperation({ summary: 'Download invoice PDF document' })
   async document(
     @Req() request: AuthenticatedRequest,
     @Param('id') id: string,
     @Res() res: Response,
   ): Promise<void> {
-    await this.invoicesService.findByIdForUser(
+    const invoice = await this.invoicesService.findByIdForUser(
       this.requireUserId(request),
       id,
       false,
     );
 
-    const html = await this.invoicePdfService.readHtml(id);
-    if (!html) {
+    const pdf = await this.invoicePdfService.readPdfBuffer(id);
+    if (!pdf) {
       throw new NotFoundException('Invoice document not found');
     }
 
-    res.type('text/html').send(html);
+    const filename = `${invoice.invoiceNumber.replace(/[^\w.-]+/g, '_')}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdf);
   }
 }

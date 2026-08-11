@@ -12,20 +12,17 @@ import {
 } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { buildCommerceConfirmationEmail } from '../../common/mail/commerce-confirmation-email.util';
+import { formatDualMoney } from '../../common/money/money-format.util';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { generateReferenceNumber } from '../../common/utils/reference-number.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ExchangeRateService } from '../platform-settings/exchange-rate.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { inquiryListingInclude } from '../inquiries/inquiry.mapper';
 import { QuotePdfService } from '../inquiries/quote-pdf.service';
 import { ACTIVE_INVOICE_STATUSES } from '../invoices/invoice.constants';
-import {
-  supersedeActiveBookingsForListing,
-  supersedeActiveInvoicesForListing,
-} from '../commerce/supersede.util';
-import { SUPERSEDED_BY_OTHER_BUYER_MESSAGE } from '../commerce/supersede.constants';
 import {
   ACTIVE_BOOKING_STATUSES,
   ADMIN_EDITABLE_BOOKING_FEE_STATUSES,
@@ -61,6 +58,7 @@ export class BookingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly platformSettingsService: PlatformSettingsService,
+    private readonly exchangeRateService: ExchangeRateService,
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
     private readonly quotePdfService: QuotePdfService,
@@ -112,11 +110,14 @@ export class BookingsService {
       include: bookingInclude,
     });
 
+    const rate = (
+      await this.exchangeRateService.getSnapshot({ refreshIfStale: false })
+    ).usdToRwfEffective;
     await this.notificationsService.send({
       userId: booking.userId,
       type: NotificationType.SYSTEM_ALERT,
       title: 'Booking fee updated',
-      body: `The booking fee for ${booking.listing.listingTitle} was updated from $${previousFee} to $${dto.bookingFeeUsd} USD.`,
+      body: `The booking fee for ${booking.listing.listingTitle} was updated from ${formatDualMoney(previousFee, rate)} to ${formatDualMoney(dto.bookingFeeUsd, rate)}.`,
       metadata: {
         bookingId: booking.id,
         previousFeeUsd: previousFee,
@@ -166,21 +167,6 @@ export class BookingsService {
 
     if (listing.status !== ListingStatus.PUBLISHED) {
       throw new BadRequestException('This vehicle is not available to book');
-    }
-
-    if (listing.isBooked) {
-      throw new BadRequestException('This vehicle has already been booked');
-    }
-
-    const confirmedBooking = await this.prisma.vehicleBooking.findFirst({
-      where: {
-        listingId: listing.id,
-        status: VehicleBookingStatus.CONFIRMED,
-      },
-    });
-
-    if (confirmedBooking) {
-      throw new BadRequestException('This vehicle has already been booked');
     }
 
     const existingForUser = await this.prisma.vehicleBooking.findFirst({
@@ -235,8 +221,10 @@ export class BookingsService {
     });
 
     const buyerName = `${user.firstName} ${user.lastName}`.trim();
-    const company =
-      await this.platformSettingsService.getCompanyPaymentDetails();
+    const [company, exchangeRate] = await Promise.all([
+      this.platformSettingsService.getCompanyPaymentDetails(),
+      this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
+    ]);
     const pdfBuffer = await this.quotePdfService.generateBuffer(
       paymentReference,
       InquiryIntent.BOOK,
@@ -263,6 +251,7 @@ export class BookingsService {
       intent: InquiryIntent.BOOK,
       company,
       bookingFeeUsd,
+      usdToRwfEffective: exchangeRate.usdToRwfEffective,
       accountActionUrl: `${frontendUrl}/my/bookings?highlight=${booking.id}`,
       accountActionLabel: 'View my booking',
       footerReason: `You are receiving this email because you created a vehicle booking on ${appName}.`,
@@ -272,7 +261,7 @@ export class BookingsService {
       userId,
       type: NotificationType.INVOICE_ISSUED,
       title: 'Vehicle booking created',
-      body: `Pay the booking fee of $${bookingFeeUsd} USD using reference ${paymentReference}. Your booking quote PDF is attached.`,
+      body: `Pay the booking fee of ${formatDualMoney(bookingFeeUsd, exchangeRate.usdToRwfEffective)} using reference ${paymentReference}. Your booking quote PDF is attached.`,
       metadata: { bookingId: booking.id, listingId: listing.id },
       emailSubject: emailContent.subject,
       emailHtml: emailContent.html,
@@ -327,6 +316,11 @@ export class BookingsService {
       );
     }
 
+    const currency = dto.currency === 'RWF' ? 'RWF' : 'USD';
+    const exchangeRate = await this.exchangeRateService.getSnapshot({
+      refreshIfStale: false,
+    });
+
     const updated = await this.prisma.$transaction(async (tx) => {
       if (proofUrls.length) {
         await tx.bookingPaymentProof.createMany({
@@ -343,11 +337,13 @@ export class BookingsService {
         where: { id: booking.id },
         data: {
           amountPaid: dto.amountPaid,
+          currency,
           bankName: dto.bankName,
           transferReference: dto.transferReference ?? booking.paymentReference,
           paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : new Date(),
           senderName: dto.senderName,
           notes: dto.notes ?? booking.notes,
+          exchangeRateUsed: exchangeRate.usdToRwfEffective,
           status: VehicleBookingStatus.UNDER_VERIFICATION,
           rejectionReason: null,
         },
@@ -604,36 +600,20 @@ export class BookingsService {
       );
     }
 
-    const { updated, supersededInvoices, supersededBookings } =
-      await this.prisma.$transaction(async (tx) => {
-        await tx.listing.update({
-          where: { id: booking.listingId },
-          data: { isBooked: true },
-        });
-
-        const supersededInvoices = await supersedeActiveInvoicesForListing(
-          tx,
-          booking.listingId,
-        );
-        const supersededBookings = await supersedeActiveBookingsForListing(
-          tx,
-          booking.listingId,
-          booking.id,
-        );
-
-        const confirmed = await tx.vehicleBooking.update({
-          where: { id: booking.id },
-          data: {
-            status: VehicleBookingStatus.CONFIRMED,
-            confirmedAt: new Date(),
-            verifiedBy: adminId,
-            verifiedAt: new Date(),
-          },
-          include: bookingInclude,
-        });
-
-        return { updated: confirmed, supersededInvoices, supersededBookings };
+    const { updated } = await this.prisma.$transaction(async (tx) => {
+      const confirmed = await tx.vehicleBooking.update({
+        where: { id: booking.id },
+        data: {
+          status: VehicleBookingStatus.CONFIRMED,
+          confirmedAt: new Date(),
+          verifiedBy: adminId,
+          verifiedAt: new Date(),
+        },
+        include: bookingInclude,
       });
+
+      return { updated: confirmed };
+    });
 
     await this.notificationsService.send({
       userId: booking.userId,
@@ -642,26 +622,6 @@ export class BookingsService {
       body: `Your booking for ${updated.listing.listingTitle} is confirmed.`,
       metadata: { bookingId: booking.id, listingId: booking.listingId },
     });
-
-    for (const invoice of supersededInvoices) {
-      await this.notificationsService.send({
-        userId: invoice.userId,
-        type: NotificationType.SYSTEM_ALERT,
-        title: 'Vehicle no longer available',
-        body: `${SUPERSEDED_BY_OTHER_BUYER_MESSAGE} Invoice ${invoice.invoiceNumber} was cancelled.`,
-        metadata: { invoiceId: invoice.id, listingId: booking.listingId },
-      });
-    }
-
-    for (const rival of supersededBookings) {
-      await this.notificationsService.send({
-        userId: rival.userId,
-        type: NotificationType.SYSTEM_ALERT,
-        title: 'Vehicle no longer available',
-        body: `${SUPERSEDED_BY_OTHER_BUYER_MESSAGE} Booking ${rival.bookingNumber} was cancelled.`,
-        metadata: { bookingId: rival.id, listingId: booking.listingId },
-      });
-    }
 
     await this.auditService.record({
       userId: adminId,

@@ -22,6 +22,7 @@ export type AdminPaymentResponse = {
   invoiceId: string;
   amountPaid: number;
   currency: string;
+  exchangeRateUsed: number | null;
   bankName: string | null;
   transferReference: string | null;
   paymentDate: Date | null;
@@ -89,6 +90,7 @@ export async function mapAdminPayments(
     invoiceId: payment.invoiceId,
     amountPaid: payment.amountPaid,
     currency: payment.currency,
+    exchangeRateUsed: payment.exchangeRateUsed,
     bankName: payment.bankName,
     transferReference: payment.transferReference,
     paymentDate: payment.paymentDate,

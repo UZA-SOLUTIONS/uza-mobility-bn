@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  ListingInventoryStage,
   ListingStatus,
   NotificationType,
   Prisma,
@@ -28,6 +29,10 @@ import type {
 } from './dto/listing-write.types';
 import { canTransition } from './listing-transitions';
 import {
+  resolveDefaultInventoryStage,
+  assertInventoryStageTransition,
+} from './listing-inventory.util';
+import {
   toAdminListing,
   toPublicListing,
   toSellerListing,
@@ -49,6 +54,7 @@ import {
   breakdownToListingPricingCreate,
   deliveryDaysFromBreakdown,
   mergeListingPricingInput,
+  parsePricingRuleIdFromPriceNotes,
   toPricingInput,
 } from './listing-pricing.util';
 import type { CreateListingPricingDto } from './dto/create-listing-pricing.dto';
@@ -507,6 +513,8 @@ export class ListingsService {
 
     const {
       removePhotoIds,
+      photoOrder,
+      primaryPhotoId,
       removeVideo,
       removeBrochure,
       pricing,
@@ -589,22 +597,79 @@ export class ListingsService {
       deliveryDaysFromPricing = resolved.deliveryDaysMax;
     }
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      await tx.listing.update({
-        where: { id: listingId },
-        data: {
-          ...this.buildListingUpdateData(listingFields),
-          ...(status !== undefined && status !== listing.status
-            ? { status }
-            : {}),
-          ...(deliveryDaysFromPricing !== undefined &&
-          listingFields.deliveryEstimateDays === undefined
-            ? { deliveryEstimateDays: deliveryDaysFromPricing }
-            : {}),
-        },
-      });
+    const listingUpdateData = {
+      ...this.buildListingUpdateData(listingFields),
+      ...(status !== undefined && status !== listing.status ? { status } : {}),
+      ...(deliveryDaysFromPricing !== undefined &&
+      listingFields.deliveryEstimateDays === undefined
+        ? { deliveryEstimateDays: deliveryDaysFromPricing }
+        : {}),
+    };
 
-      if (pricingCreate) {
+    const existingPhotos = [...listing.photos].sort(
+      (a, b) => a.displayOrder - b.displayOrder,
+    );
+    const currentPhotoIds = existingPhotos.map((photo) => photo.id);
+    const currentPrimaryId =
+      existingPhotos.find((photo) => photo.isPrimary)?.id ?? null;
+
+    const photoOrderChanged = Boolean(
+      photoOrder?.length &&
+      (photoOrder.length !== currentPhotoIds.length ||
+        photoOrder.some((id, index) => id !== currentPhotoIds[index])),
+    );
+    const primaryChanged = Boolean(
+      primaryPhotoId && primaryPhotoId !== currentPrimaryId,
+    );
+
+    const hasListingFieldChanges = this.listingUpdateDataHasChanges(
+      listing,
+      listingUpdateData,
+    );
+    const hasMediaFileChanges = Boolean(
+      (removePhotoIds?.length ?? 0) > 0 ||
+      (photoUrls?.length ?? 0) > 0 ||
+      removeVideo ||
+      removeBrochure ||
+      listingFields.videoUrl ||
+      listingFields.brochureUrl,
+    );
+    const hasPhotoLayoutChanges = photoOrderChanged || primaryChanged;
+    const hasPricingChanges = Boolean(
+      pricingCreate &&
+      this.listingPricingHasChanges(listing.listingPricing, pricingCreate),
+    );
+    const hasEvSpecsChanges = Boolean(
+      listingFields.evSpecs &&
+      this.evSpecsHaveChanges(existingEvSpecs, listingFields.evSpecs),
+    );
+    const hasUseCasesChanges =
+      listingFields.useCases !== undefined &&
+      this.useCasesHaveChanges(
+        listing.useCaseTags?.map((tag) => tag.useCase) ?? [],
+        listingFields.useCases,
+      );
+
+    if (
+      !hasListingFieldChanges &&
+      !hasMediaFileChanges &&
+      !hasPhotoLayoutChanges &&
+      !hasPricingChanges &&
+      !hasEvSpecsChanges &&
+      !hasUseCasesChanges
+    ) {
+      return toAdminListing(listing);
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      if (hasListingFieldChanges) {
+        await tx.listing.update({
+          where: { id: listingId },
+          data: listingUpdateData,
+        });
+      }
+
+      if (hasPricingChanges && pricingCreate) {
         await tx.listingPricing.upsert({
           where: { listingId },
           create: { listingId, ...pricingCreate },
@@ -616,11 +681,20 @@ export class ListingsService {
         await this.removeAdminListingPhotos(tx, listingId, removePhotoIds);
       }
 
+      if (hasPhotoLayoutChanges) {
+        await this.reorderAdminListingPhotos(
+          tx,
+          listingId,
+          photoOrderChanged ? photoOrder : undefined,
+          primaryChanged ? primaryPhotoId : undefined,
+        );
+      }
+
       if (photoUrls?.length) {
         await this.appendAdminListingPhotos(tx, listingId, photoUrls);
       }
 
-      if (listingFields.evSpecs) {
+      if (hasEvSpecsChanges && listingFields.evSpecs) {
         await tx.evSpec.upsert({
           where: { listingId },
           create: { listingId, ...listingFields.evSpecs },
@@ -628,7 +702,7 @@ export class ListingsService {
         });
       }
 
-      if (listingFields.useCases) {
+      if (hasUseCasesChanges && listingFields.useCases) {
         await tx.listingUseCase.deleteMany({ where: { listingId } });
         await tx.listingUseCase.createMany({
           data: listingFields.useCases.map((useCase) => ({
@@ -644,6 +718,20 @@ export class ListingsService {
 
       if (photoCount < 1) {
         throw new BadRequestException('At least one photo is required');
+      }
+
+      if (
+        !hasListingFieldChanges &&
+        (hasMediaFileChanges ||
+          hasPhotoLayoutChanges ||
+          hasPricingChanges ||
+          hasEvSpecsChanges ||
+          hasUseCasesChanges)
+      ) {
+        await tx.listing.update({
+          where: { id: listingId },
+          data: { updatedAt: new Date() },
+        });
       }
 
       return tx.listing.findUnique({
@@ -979,6 +1067,10 @@ export class ListingsService {
 
     if (filters.sellerType) {
       where.sellerType = filters.sellerType;
+    }
+
+    if (filters.inventoryStage) {
+      where.inventoryStage = filters.inventoryStage;
     }
 
     if (filters.q?.trim()) {
@@ -1333,6 +1425,7 @@ export class ListingsService {
       slug,
       status: ListingStatus.DRAFT,
       sellerType: dto.sellerType,
+      inventoryStage: resolveDefaultInventoryStage(dto.sellerType),
       brand: dto.brand,
       model: dto.model,
       trim: dto.trim,
@@ -1715,6 +1808,483 @@ export class ListingsService {
         displayOrder: existingCount + index,
       })),
     });
+  }
+
+  private async reorderAdminListingPhotos(
+    tx: Prisma.TransactionClient,
+    listingId: string,
+    photoOrder?: string[],
+    primaryPhotoId?: string,
+  ): Promise<void> {
+    const photos = await tx.listingPhoto.findMany({
+      where: { listingId },
+      orderBy: { displayOrder: 'asc' },
+    });
+
+    if (!photos.length) {
+      return;
+    }
+
+    if (photoOrder?.length) {
+      const uniqueOrder = [...new Set(photoOrder)];
+      if (uniqueOrder.length !== photos.length) {
+        throw new BadRequestException(
+          'photoOrder must include every remaining photo exactly once',
+        );
+      }
+
+      const photoIds = new Set(photos.map((photo) => photo.id));
+      if (uniqueOrder.some((id) => !photoIds.has(id))) {
+        throw new BadRequestException(
+          'photoOrder contains a photo that is not on this listing',
+        );
+      }
+
+      for (let index = 0; index < uniqueOrder.length; index += 1) {
+        await tx.listingPhoto.update({
+          where: { id: uniqueOrder[index] },
+          data: { displayOrder: index },
+        });
+      }
+    }
+
+    if (primaryPhotoId) {
+      const target = photos.find((photo) => photo.id === primaryPhotoId);
+      if (!target) {
+        throw new BadRequestException(
+          'primaryPhotoId is not a photo on this listing',
+        );
+      }
+
+      await tx.listingPhoto.updateMany({
+        where: { listingId },
+        data: { isPrimary: false },
+      });
+      await tx.listingPhoto.update({
+        where: { id: primaryPhotoId },
+        data: { isPrimary: true },
+      });
+    }
+  }
+
+  private listingUpdateDataHasChanges(
+    listing: {
+      listingTitle: string;
+      brand: string;
+      model: string;
+      trim: string | null;
+      manufacturingYear: number;
+      isNew: boolean;
+      condition: string | null;
+      bodyType: string | null;
+      powertrainType: string | null;
+      color: string | null;
+      seats: number | null;
+      steeringPosition: string | null;
+      drivetrain: string | null;
+      mileageKm: number | null;
+      hasWarranty: boolean | null;
+      warrantyDetails: string | null;
+      hasAccidentHistory: boolean | null;
+      ownershipCount: number | null;
+      registrationStatus: string | null;
+      city: string | null;
+      country: string;
+      deliveryEstimateDays: number | null;
+      description: string | null;
+      videoUrl: string | null;
+      brochureUrl: string | null;
+      isFullOption: boolean;
+      categoryId: string;
+      subcategoryId: string | null;
+      status: string;
+    },
+    data: Prisma.ListingUpdateInput,
+  ): boolean {
+    const scalarChecks: Array<[unknown, unknown]> = [
+      [data.listingTitle, listing.listingTitle],
+      [data.brand, listing.brand],
+      [data.model, listing.model],
+      [data.trim, listing.trim],
+      [data.manufacturingYear, listing.manufacturingYear],
+      [data.isNew, listing.isNew],
+      [data.condition, listing.condition],
+      [data.bodyType, listing.bodyType],
+      [data.powertrainType, listing.powertrainType],
+      [data.color, listing.color],
+      [data.seats, listing.seats],
+      [data.steeringPosition, listing.steeringPosition],
+      [data.drivetrain, listing.drivetrain],
+      [data.mileageKm, listing.mileageKm],
+      [data.hasWarranty, listing.hasWarranty],
+      [data.warrantyDetails, listing.warrantyDetails],
+      [data.hasAccidentHistory, listing.hasAccidentHistory],
+      [data.ownershipCount, listing.ownershipCount],
+      [data.registrationStatus, listing.registrationStatus],
+      [data.city, listing.city],
+      [data.country, listing.country],
+      [data.deliveryEstimateDays, listing.deliveryEstimateDays],
+      [data.description, listing.description],
+      [data.videoUrl, listing.videoUrl],
+      [data.brochureUrl, listing.brochureUrl],
+      [data.isFullOption, listing.isFullOption],
+      [data.status, listing.status],
+    ];
+
+    if (
+      scalarChecks.some(
+        ([next, current]) => next !== undefined && next !== current,
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      data.category?.connect?.id &&
+      data.category.connect.id !== listing.categoryId
+    ) {
+      return true;
+    }
+
+    if (data.subcategory !== undefined) {
+      if (
+        'disconnect' in data.subcategory &&
+        data.subcategory.disconnect &&
+        listing.subcategoryId
+      ) {
+        return true;
+      }
+      if (
+        'connect' in data.subcategory &&
+        data.subcategory.connect?.id &&
+        data.subcategory.connect.id !== listing.subcategoryId
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private listingPricingHasChanges(
+    existing:
+      | {
+          basePriceUsd: unknown;
+          fobPriceUsd: unknown;
+          discountUsd: unknown;
+          finalPriceUsd: unknown;
+          pricingRuleId?: string | null;
+          priceNotes?: string | null;
+        }
+      | null
+      | undefined,
+    next: Prisma.ListingPricingCreateWithoutListingInput,
+  ): boolean {
+    if (!existing) {
+      return true;
+    }
+
+    const asNumber = (value: unknown): number | null => {
+      if (value == null) return null;
+      const num = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(num) ? num : null;
+    };
+
+    return (
+      asNumber(next.basePriceUsd) !== asNumber(existing.basePriceUsd) ||
+      asNumber(next.fobPriceUsd) !== asNumber(existing.fobPriceUsd) ||
+      asNumber(next.discountUsd) !== asNumber(existing.discountUsd) ||
+      asNumber(next.finalPriceUsd) !== asNumber(existing.finalPriceUsd) ||
+      (next.priceNotes ?? null) !== (existing.priceNotes ?? null)
+    );
+  }
+
+  private evSpecsHaveChanges(
+    existing:
+      | {
+          rangeKm: number | null;
+          batteryHealthPercent: number | null;
+          batteryCapacityKwh: unknown;
+          batteryHealthReport: boolean;
+          fastChargingSupported: boolean | null;
+          chargingTimeHours: unknown;
+          motorPowerKw: unknown;
+          topSpeedKmh: number | null;
+          payloadCapacityKg: unknown;
+          grossVehicleWeightKg: unknown;
+        }
+      | null
+      | undefined,
+    next: NonNullable<AdminUpdateListingPayload['evSpecs']>,
+  ): boolean {
+    if (!existing) {
+      return true;
+    }
+
+    const asNumber = (value: unknown): number | null => {
+      if (value == null) return null;
+      const num = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(num) ? num : null;
+    };
+
+    return (
+      (next.rangeKm ?? null) !== (existing.rangeKm ?? null) ||
+      (next.batteryHealthPercent ?? null) !==
+        (existing.batteryHealthPercent ?? null) ||
+      asNumber(next.batteryCapacityKwh) !==
+        asNumber(existing.batteryCapacityKwh) ||
+      (next.batteryHealthReport ?? false) !== existing.batteryHealthReport ||
+      (next.fastChargingSupported ?? null) !==
+        (existing.fastChargingSupported ?? null) ||
+      asNumber(next.chargingTimeHours) !==
+        asNumber(existing.chargingTimeHours) ||
+      asNumber(next.motorPowerKw) !== asNumber(existing.motorPowerKw) ||
+      (next.topSpeedKmh ?? null) !== (existing.topSpeedKmh ?? null) ||
+      asNumber(next.payloadCapacityKg) !==
+        asNumber(existing.payloadCapacityKg) ||
+      asNumber(next.grossVehicleWeightKg) !==
+        asNumber(existing.grossVehicleWeightKg)
+    );
+  }
+
+  private useCasesHaveChanges(existing: string[], next: string[]): boolean {
+    if (existing.length !== next.length) {
+      return true;
+    }
+    const current = [...existing].sort();
+    const incoming = [...next].sort();
+    return current.some((value, index) => value !== incoming[index]);
+  }
+
+  async advanceInventoryStage(
+    listingId: string,
+    stage: ListingInventoryStage,
+    adminUserId: string,
+    auditContext: RequestAuditContext = {},
+  ) {
+    const listing = await this.prisma.listing.findFirst({
+      where: { id: listingId, deletedAt: null },
+      include: {
+        seller: { select: { userId: true, sellerType: true } },
+        listingPricing: true,
+      },
+    });
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+
+    const ownerUserId = listing.createdByUserId ?? listing.seller.userId;
+
+    // Heal listings already in Kigali that still show the China sourcing channel.
+    if (
+      listing.inventoryStage === ListingInventoryStage.KIGALI_STOCK &&
+      stage === ListingInventoryStage.KIGALI_STOCK &&
+      (listing.sellerType === SellerType.UZA_CHINA_SOURCING ||
+        listing.listingPricing?.basePriceUsd == null)
+    ) {
+      const rwandaSeller = await this.resolveAdminSellerProfile(
+        ownerUserId,
+        SellerType.UZA_RWANDA_STOCK,
+        auditContext,
+      );
+      await this.prisma.listing.update({
+        where: { id: listingId },
+        data: {
+          sellerType: SellerType.UZA_RWANDA_STOCK,
+          country: 'RW',
+          city: listing.city?.trim() || 'Kigali',
+          kigaliArrivedAt: listing.kigaliArrivedAt ?? new Date(),
+          seller: { connect: { id: rwandaSeller.id } },
+        },
+      });
+      await this.migratePricingForInventoryChannel(
+        listingId,
+        SellerType.UZA_RWANDA_STOCK,
+        'RW',
+      );
+      await this.auditService.record({
+        userId: adminUserId,
+        action: 'listings:inventory-channel-synced',
+        entity: 'Listing',
+        entityId: listingId,
+        ipAddress: auditContext.ipAddress,
+        userAgent: auditContext.userAgent,
+        metadata: {
+          fromSellerType: listing.sellerType,
+          toSellerType: SellerType.UZA_RWANDA_STOCK,
+          pricingMigrated: true,
+        },
+      });
+      const refreshed = await this.prisma.listing.findFirstOrThrow({
+        where: { id: listingId },
+        include: adminListingInclude,
+      });
+      return toAdminListing(refreshed);
+    }
+
+    assertInventoryStageTransition(listing.inventoryStage, stage);
+
+    const data: Prisma.ListingUpdateInput = {
+      inventoryStage: stage,
+    };
+
+    if (stage === ListingInventoryStage.IN_TRANSIT) {
+      data.inventoryPaidAt = listing.inventoryPaidAt ?? new Date();
+    }
+    if (stage === ListingInventoryStage.AT_PORT) {
+      data.portArrivedAt = listing.portArrivedAt ?? new Date();
+    }
+
+    const movingIntoKigali =
+      stage === ListingInventoryStage.KIGALI_STOCK &&
+      listing.inventoryStage !== ListingInventoryStage.KIGALI_STOCK;
+    const movingOutOfKigali =
+      listing.inventoryStage === ListingInventoryStage.KIGALI_STOCK &&
+      stage !== ListingInventoryStage.KIGALI_STOCK;
+
+    if (movingIntoKigali) {
+      data.kigaliArrivedAt = listing.kigaliArrivedAt ?? new Date();
+      data.sellerType = SellerType.UZA_RWANDA_STOCK;
+      data.country = 'RW';
+      data.city = listing.city?.trim() || 'Kigali';
+      const rwandaSeller = await this.resolveAdminSellerProfile(
+        ownerUserId,
+        SellerType.UZA_RWANDA_STOCK,
+        auditContext,
+      );
+      data.seller = { connect: { id: rwandaSeller.id } };
+    }
+
+    if (movingOutOfKigali) {
+      // Pipeline vehicles leaving Kigali return to China-sourcing channel.
+      data.sellerType = SellerType.UZA_CHINA_SOURCING;
+      if (!listing.country || listing.country === 'RW') {
+        data.country = 'CN';
+      }
+      const chinaSeller = await this.resolveAdminSellerProfile(
+        ownerUserId,
+        SellerType.UZA_CHINA_SOURCING,
+        auditContext,
+      );
+      data.seller = { connect: { id: chinaSeller.id } };
+    }
+
+    const updated = await this.prisma.listing.update({
+      where: { id: listingId },
+      data,
+      include: adminListingInclude,
+    });
+
+    if (movingIntoKigali) {
+      await this.migratePricingForInventoryChannel(
+        listingId,
+        SellerType.UZA_RWANDA_STOCK,
+        updated.country,
+      );
+    } else if (movingOutOfKigali) {
+      await this.migratePricingForInventoryChannel(
+        listingId,
+        SellerType.UZA_CHINA_SOURCING,
+        updated.country,
+      );
+    }
+
+    await this.auditService.record({
+      userId: adminUserId,
+      action: 'listings:inventory-stage',
+      entity: 'Listing',
+      entityId: listingId,
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        from: listing.inventoryStage,
+        to: stage,
+        sellerType: updated.sellerType,
+      },
+    });
+
+    const refreshed = await this.prisma.listing.findFirstOrThrow({
+      where: { id: listingId },
+      include: adminListingInclude,
+    });
+    return toAdminListing(refreshed);
+  }
+
+  /**
+   * China listings store FOB; Rwanda stock expects basePriceUsd.
+   * Keep the buyer list price stable when switching channels.
+   */
+  private async migratePricingForInventoryChannel(
+    listingId: string,
+    targetSellerType: SellerType,
+    originCountry: string | null | undefined,
+  ) {
+    const pricing = await this.prisma.listingPricing.findUnique({
+      where: { listingId },
+    });
+    if (!pricing) return;
+
+    const pricingRuleId = parsePricingRuleIdFromPriceNotes(pricing.priceNotes);
+
+    const asNumber = (value: Prisma.Decimal | number | null | undefined) =>
+      value == null ? null : Number(value);
+
+    if (targetSellerType === SellerType.UZA_RWANDA_STOCK) {
+      const basePriceUsd =
+        asNumber(pricing.basePriceUsd) ??
+        asNumber(pricing.finalPriceUsd) ??
+        asNumber(pricing.fobPriceUsd);
+      if (basePriceUsd == null) return;
+
+      const { pricing: nextPricing } = await this.resolveListingPricing(
+        SellerType.UZA_RWANDA_STOCK,
+        originCountry ?? 'RW',
+        {
+          basePriceUsd,
+          discountUsd: asNumber(pricing.discountUsd) ?? undefined,
+          pricingRuleId,
+        },
+      );
+
+      // Preserve the published buyer list price through the channel switch.
+      nextPricing.finalPriceUsd = pricing.finalPriceUsd;
+      if (pricing.fobPriceUsd != null) {
+        nextPricing.fobPriceUsd = pricing.fobPriceUsd;
+      }
+
+      await this.prisma.listingPricing.update({
+        where: { listingId },
+        data: nextPricing,
+      });
+      return;
+    }
+
+    if (targetSellerType === SellerType.UZA_CHINA_SOURCING) {
+      const fobPriceUsd =
+        asNumber(pricing.fobPriceUsd) ??
+        asNumber(pricing.basePriceUsd) ??
+        asNumber(pricing.finalPriceUsd);
+      if (fobPriceUsd == null) return;
+
+      const { pricing: nextPricing } = await this.resolveListingPricing(
+        SellerType.UZA_CHINA_SOURCING,
+        originCountry ?? 'CN',
+        {
+          fobPriceUsd,
+          discountUsd: asNumber(pricing.discountUsd) ?? undefined,
+          pricingRuleId,
+        },
+      );
+
+      if (pricing.basePriceUsd != null) {
+        nextPricing.basePriceUsd = pricing.basePriceUsd;
+      }
+
+      await this.prisma.listingPricing.update({
+        where: { listingId },
+        data: nextPricing,
+      });
+    }
   }
 
   async getWishlistIds(userId: string): Promise<string[]> {

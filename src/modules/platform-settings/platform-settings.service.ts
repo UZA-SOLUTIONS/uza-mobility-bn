@@ -3,6 +3,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
+import { ExchangeRateService } from './exchange-rate.service';
 import {
   DEFAULT_BOOKING_FEE_USD,
   DEFAULT_PLATFORM_SETTINGS,
@@ -17,6 +18,7 @@ export class PlatformSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly exchangeRateService: ExchangeRateService,
   ) {}
 
   getDefault(key: PlatformSettingKey): string {
@@ -40,15 +42,28 @@ export class PlatformSettingsService {
   }
 
   async getCompanyPaymentDetails(): Promise<CompanyPaymentDetails> {
-    const [legalName, bankName, accountNumber, whatsappNumber] =
-      await Promise.all([
-        this.getString(PLATFORM_SETTING_KEYS.companyLegalName),
-        this.getString(PLATFORM_SETTING_KEYS.companyBankName),
-        this.getString(PLATFORM_SETTING_KEYS.companyAccountNumber),
-        this.getString(PLATFORM_SETTING_KEYS.companyWhatsappNumber),
-      ]);
+    const [
+      legalName,
+      usdBankName,
+      usdAccountNumber,
+      rwfBankName,
+      rwfAccountNumber,
+      whatsappNumber,
+    ] = await Promise.all([
+      this.getString(PLATFORM_SETTING_KEYS.companyLegalName),
+      this.getString(PLATFORM_SETTING_KEYS.companyBankName),
+      this.getString(PLATFORM_SETTING_KEYS.companyAccountNumber),
+      this.getString(PLATFORM_SETTING_KEYS.companyBankNameRwf),
+      this.getString(PLATFORM_SETTING_KEYS.companyAccountNumberRwf),
+      this.getString(PLATFORM_SETTING_KEYS.companyWhatsappNumber),
+    ]);
 
-    return { legalName, bankName, accountNumber, whatsappNumber };
+    return {
+      legalName,
+      whatsappNumber,
+      usd: { bankName: usdBankName, accountNumber: usdAccountNumber },
+      rwf: { bankName: rwfBankName, accountNumber: rwfAccountNumber },
+    };
   }
 
   buildWhatsAppUrl(whatsappNumber: string, message: string): string {
@@ -62,14 +77,21 @@ export class PlatformSettingsService {
   async getSettings(): Promise<PlatformSettingsSnapshot> {
     const bookingFeeUsd = await this.getBookingFeeUsd();
     const company = await this.getCompanyPaymentDetails();
+    const exchangeRate = await this.exchangeRateService.getSnapshot({
+      refreshIfStale: false,
+    });
 
     return {
       bookingFeeUsd,
       companyLegalName: company.legalName,
-      companyBankName: company.bankName,
-      companyAccountNumber: company.accountNumber,
+      companyBankName: company.usd.bankName,
+      companyAccountNumber: company.usd.accountNumber,
+      companyBankNameRwf: company.rwf.bankName,
+      companyAccountNumberRwf: company.rwf.accountNumber,
       companyWhatsappNumber: company.whatsappNumber,
-      currency: 'USD',
+      currency: 'USDT',
+      rwfMarkupPercent: exchangeRate.markupPercent,
+      exchangeRate,
     };
   }
 
@@ -104,10 +126,28 @@ export class PlatformSettingsService {
         value: dto.companyAccountNumber.trim(),
       });
     }
+    if (dto.companyBankNameRwf != null) {
+      updates.push({
+        key: PLATFORM_SETTING_KEYS.companyBankNameRwf,
+        value: dto.companyBankNameRwf.trim(),
+      });
+    }
+    if (dto.companyAccountNumberRwf != null) {
+      updates.push({
+        key: PLATFORM_SETTING_KEYS.companyAccountNumberRwf,
+        value: dto.companyAccountNumberRwf.trim(),
+      });
+    }
     if (dto.companyWhatsappNumber != null) {
       updates.push({
         key: PLATFORM_SETTING_KEYS.companyWhatsappNumber,
         value: dto.companyWhatsappNumber.replace(/\D/g, ''),
+      });
+    }
+    if (dto.rwfMarkupPercent != null) {
+      updates.push({
+        key: PLATFORM_SETTING_KEYS.rwfMarkupPercent,
+        value: String(dto.rwfMarkupPercent),
       });
     }
 
@@ -124,6 +164,10 @@ export class PlatformSettingsService {
         }),
       ),
     );
+
+    if (dto.rwfMarkupPercent != null) {
+      await this.exchangeRateService.recomputeEffective(adminId);
+    }
 
     await this.auditService.record({
       userId: adminId,

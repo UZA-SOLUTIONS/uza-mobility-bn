@@ -16,6 +16,7 @@ import { generateReferenceNumber } from '../../common/utils/reference-number.uti
 import { MailService } from '../../common/mail/mail.service';
 import { buildCommerceConfirmationEmail } from '../../common/mail/commerce-confirmation-email.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ExchangeRateService } from '../platform-settings/exchange-rate.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateInquiryDto } from './dto/create-inquiry.dto';
@@ -37,6 +38,7 @@ export class InquiriesService {
     private readonly mailService: MailService,
     private readonly notificationsService: NotificationsService,
     private readonly platformSettingsService: PlatformSettingsService,
+    private readonly exchangeRateService: ExchangeRateService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -51,24 +53,7 @@ export class InquiriesService {
     });
 
     if (!listing) {
-      const unavailable = await this.prisma.listing.findFirst({
-        where: { id: dto.listingId, deletedAt: null },
-        select: { status: true, isBooked: true },
-      });
-
-      if (unavailable?.status === ListingStatus.SOLD) {
-        throw new BadRequestException('This vehicle has been sold');
-      }
-
-      if (unavailable?.isBooked) {
-        throw new BadRequestException('This vehicle has already been booked');
-      }
-
       throw new NotFoundException('Published listing not found');
-    }
-
-    if (listing.isBooked) {
-      throw new BadRequestException('This vehicle has already been booked');
     }
 
     const email = dto.email.trim().toLowerCase();
@@ -336,9 +321,10 @@ export class InquiriesService {
     const frontendUrl = (
       this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
     ).replace(/\/$/, '');
-    const [company, bookingFeeUsd] = await Promise.all([
+    const [company, bookingFeeUsd, exchangeRate] = await Promise.all([
       this.platformSettingsService.getCompanyPaymentDetails(),
       this.platformSettingsService.getBookingFeeUsd(),
+      this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
     ]);
     const whatsappUrl = this.platformSettingsService.buildWhatsAppUrl(
       company.whatsappNumber,
@@ -369,6 +355,7 @@ export class InquiriesService {
       intent,
       company,
       bookingFeeUsd,
+      usdToRwfEffective: exchangeRate.usdToRwfEffective,
       whatsappUrl,
       accountActionUrl: `${frontendUrl}/register?${registerParams.toString()}`,
       accountActionLabel: 'Create your account',

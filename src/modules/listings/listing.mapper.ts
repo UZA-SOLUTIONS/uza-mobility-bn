@@ -1,6 +1,10 @@
 import { Listing, ListingPricing, ListingStatus, Prisma } from '@prisma/client';
 import { toAbsoluteUploadUrl } from '../../common/uploads/storage.paths';
 import type { PromotionPriceDisplay } from '../promotions/promotion-display.util';
+import {
+  inventoryStagePublicLabel,
+  resolveDefaultInventoryStage,
+} from './listing-inventory.util';
 
 type ListingWithRelations = Prisma.ListingGetPayload<{
   include: {
@@ -21,17 +25,13 @@ type ListingWithRelations = Prisma.ListingGetPayload<{
   };
 }>;
 
+/** Public merchandising badge only — never Booked/Sold for guests. */
 export function getPublicDisplayBadge(
-  status: ListingStatus,
-  isBooked?: boolean,
+  listing: Pick<Listing, 'inventoryStage' | 'sellerType'>,
 ): string | null {
-  if (status === ListingStatus.SOLD) {
-    return 'Sold';
-  }
-  if (isBooked) {
-    return 'Booked';
-  }
-  return null;
+  const stage =
+    listing.inventoryStage ?? resolveDefaultInventoryStage(listing.sellerType);
+  return inventoryStagePublicLabel(stage);
 }
 
 export function toPublicPricing(pricing: ListingPricing | null) {
@@ -54,14 +54,17 @@ export function toPublicListing<T extends ListingWithRelations>(
     adminNotes: _adminNotes,
     listingPricing,
     verificationReport: _verificationReport,
+    isBooked: _isBooked,
     ...rest
   } = listing as T & {
     adminNotes?: string | null;
     verificationReport?: { riskNotes?: string | null } | null;
+    isBooked?: boolean;
   };
 
   return {
     ...rest,
+    isBooked: false,
     videoUrl: rest.videoUrl
       ? toAbsoluteUploadUrl(rest.videoUrl as string)
       : rest.videoUrl,
@@ -73,7 +76,8 @@ export function toPublicListing<T extends ListingWithRelations>(
       url: toAbsoluteUploadUrl(photo.url),
     })),
     listingPricing: toPublicPricing(listingPricing),
-    displayBadge: getPublicDisplayBadge(rest.status, rest.isBooked),
+    displayBadge: getPublicDisplayBadge(listing),
+    inventoryStageLabel: getPublicDisplayBadge(listing),
     ...(promotionDisplay ? { promotionDisplay } : {}),
   };
 }
