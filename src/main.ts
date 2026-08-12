@@ -8,7 +8,12 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.set('trust proxy', 1);
-  app.enableCors();
+  app.enableCors({
+    origin: ['https://uzamobility.com', 'https://www.uzamobility.com', 'https://admin.uzamobility.com', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],
+  });
 
   const configService = app.get(ConfigService);
 

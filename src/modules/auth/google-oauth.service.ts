@@ -138,7 +138,7 @@ export class GoogleOAuthService {
   }
 
   buildFrontendCallbackUrl(exchangeCode: string, returnTo: string): string {
-    const url = new URL('/auth/google/callback', this.getFrontendUrl());
+    const url = new URL('/auth/google/complete', this.getFrontendUrl());
     url.searchParams.set('code', exchangeCode);
     if (returnTo) {
       url.searchParams.set('returnTo', returnTo);
@@ -147,7 +147,7 @@ export class GoogleOAuthService {
   }
 
   buildFrontendErrorUrl(message: string, returnTo?: string): string {
-    const url = new URL('/auth/google/callback', this.getFrontendUrl());
+    const url = new URL('/auth/google/complete', this.getFrontendUrl());
     url.searchParams.set('error', message);
     if (returnTo) {
       url.searchParams.set('returnTo', returnTo);
