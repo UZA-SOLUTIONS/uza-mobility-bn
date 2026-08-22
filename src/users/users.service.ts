@@ -777,6 +777,9 @@ export class UsersService {
   toSafeUser(user: UserWithRelations): SafeUser {
     return {
       id: user.id,
+      // The permanent public identifier. Safe to expose — that is what it is for, and it
+      // is what other UZA systems key on.
+      uzaId: user.uzaId,
       email: user.email,
       googleId: user.googleId,
       phone: user.phone,

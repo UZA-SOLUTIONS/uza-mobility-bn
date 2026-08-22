@@ -29,7 +29,7 @@ model Role {
 
 model Permission {
   id          String           @id @default(cuid())
-  action      String           // e.g. listings:approve, invoices:confirm, payments:verify
+  action      String // e.g. listings:approve, invoices:confirm, payments:verify
   description String?
   roles       RolePermission[]
   createdAt   DateTime         @default(now())
@@ -53,20 +53,27 @@ model RolePermission {
 // ============================================================
 
 model User {
-  id                String              @id @default(cuid())
-  email             String              @unique
-  googleId          String?             @unique
+  id                String    @id @default(cuid())
+  /// The permanent, public UZA identifier — UZA-P-2026-000141. One person, one number,
+  /// across the marketplace, the academy, financing, charging and the garage. Never
+  /// reissued, and deliberately not derived from anything that can change.
+  ///
+  /// Nullable for now so the migration is safe on a live table; a second, separate deploy
+  /// makes it NOT NULL once the backfill is confirmed to have covered every row.
+  uzaId             String?   @unique
+  email             String    @unique
+  googleId          String?   @unique
   phone             String?
   passwordHash      String
   firstName         String
   lastName          String
-  isActive          Boolean             @default(true)
-  isEmailVerified   Boolean             @default(false)
-  isPhoneVerified   Boolean             @default(false)
-  preferredLanguage String              @default("en") // en, fr, rw
+  isActive          Boolean   @default(true)
+  isEmailVerified   Boolean   @default(false)
+  isPhoneVerified   Boolean   @default(false)
+  preferredLanguage String    @default("en") // en, fr, rw
   profilePhoto      String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
   deletedAt         DateTime?
 
   roles             UserRole[]
@@ -84,9 +91,23 @@ model User {
   vehicleBookings   VehicleBooking[]
   inquiries         Inquiry[]
   notifications     Notification[]
-  listingsCreated   Listing[]           @relation("ListingCreatedBy")
+  listingsCreated   Listing[]          @relation("ListingCreatedBy")
   stationReviews    StationReview[]
+  identityLinks     IdentityLink[]
 
+  // --- Tunga Taxi programme (backend pack, applied 22 August 2026) ---
+  wallet            Wallet?
+  sweepMandate      SweepMandate?
+  enrolments        Enrolment[]
+  placements        PlacementProgramme[]
+  readinessScores   ReadinessScore[]
+  evidenceItems     EvidenceItem[]
+  driverProfile     DriverProfile?
+  certificates      Certificate[]
+  driverAssignments DriverAssignment[]
+  membership        Membership?
+
+  @@index([uzaId])
   @@map("users")
 }
 
@@ -148,21 +169,21 @@ enum BuyerType {
 }
 
 model BuyerProfile {
-  id              String     @id @default(cuid())
-  userId          String     @unique
-  buyerType       BuyerType  @default(INDIVIDUAL)
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  buyerType        BuyerType @default(INDIVIDUAL)
   organizationName String?
-  taxId           String?
-  address         String?
-  city            String?
-  country         String     @default("RW")
-  nationalId      String?
-  passportNumber  String?
-  isVerified      Boolean    @default(false)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  taxId            String?
+  address          String?
+  city             String?
+  country          String    @default("RW")
+  nationalId       String?
+  passportNumber   String?
+  isVerified       Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("buyer_profiles")
 }
@@ -172,10 +193,10 @@ model BuyerProfile {
 // ============================================================
 
 enum SellerType {
-  UZA_RWANDA_STOCK      // UZA owns vehicle, physically in Rwanda
-  UZA_CHINA_SOURCING    // UZA sources from China/international
-  LOCAL_SELLER          // Local dealer/individual in Rwanda
-  INTERNATIONAL_SELLER  // Non-UZA seller outside Rwanda
+  UZA_RWANDA_STOCK // UZA owns vehicle, physically in Rwanda
+  UZA_CHINA_SOURCING // UZA sources from China/international
+  LOCAL_SELLER // Local dealer/individual in Rwanda
+  INTERNATIONAL_SELLER // Non-UZA seller outside Rwanda
 }
 
 /// Merchandising pipeline for catalog offers (not exclusive unit lock).
@@ -194,30 +215,30 @@ enum SellerStatus {
 }
 
 model Seller {
-  id                 String             @id @default(cuid())
-  userId             String
-  sellerType         SellerType
-  status             SellerStatus       @default(PENDING)
-  businessName       String
-  businessRegNumber  String?
-  taxId              String?
-  contactPerson      String?
-  phone              String?
-  email              String?
-  address            String?
-  city               String?
-  country            String
-  logoUrl            String?
-  description        String?
-  isVerified         Boolean            @default(false)
-  verifiedAt         DateTime?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  id                String       @id @default(cuid())
+  userId            String
+  sellerType        SellerType
+  status            SellerStatus @default(PENDING)
+  businessName      String
+  businessRegNumber String?
+  taxId             String?
+  contactPerson     String?
+  phone             String?
+  email             String?
+  address           String?
+  city              String?
+  country           String
+  logoUrl           String?
+  description       String?
+  isVerified        Boolean      @default(false)
+  verifiedAt        DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
-  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  listings           Listing[]
-  subscription       SellerSubscription?
-  parts              Part[]
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listings     Listing[]
+  subscription SellerSubscription?
+  parts        Part[]
 
   @@unique([userId, sellerType])
   @@map("sellers")
@@ -242,7 +263,7 @@ model SellerSubscription {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  seller         Seller           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
 
   @@map("seller_subscriptions")
 }
@@ -260,16 +281,16 @@ enum CategoryType {
 }
 
 model Category {
-  id            String        @id @default(cuid())
-  name          String        @unique
-  slug          String        @unique
-  type          CategoryType
-  description   String?
-  iconUrl       String?
-  displayOrder  Int           @default(0)
-  isActive      Boolean       @default(true)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id           String       @id @default(cuid())
+  name         String       @unique
+  slug         String       @unique
+  type         CategoryType
+  description  String?
+  iconUrl      String?
+  displayOrder Int          @default(0)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   subcategories Subcategory[]
   listings      Listing[]
@@ -278,19 +299,19 @@ model Category {
 }
 
 model Subcategory {
-  id           String    @id @default(cuid())
+  id           String   @id @default(cuid())
   categoryId   String
   name         String
-  slug         String    @unique
+  slug         String   @unique
   description  String?
   iconUrl      String?
-  displayOrder Int       @default(0)
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  category     Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  listings     Listing[]
+  category Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  listings Listing[]
 
   @@unique([categoryId, name])
   @@map("subcategories")
@@ -314,10 +335,10 @@ enum ListingStatus {
 }
 
 enum PowertrainType {
-  BEV   // Battery Electric Vehicle
-  PHEV  // Plug-in Hybrid
-  HEV   // Hybrid
-  EREV  // Extended Range
+  BEV // Battery Electric Vehicle
+  PHEV // Plug-in Hybrid
+  HEV // Hybrid
+  EREV // Extended Range
 }
 
 enum BodyType {
@@ -364,9 +385,9 @@ enum SteeringPosition {
 }
 
 enum DrivetrainType {
-  FWD   // Front Wheel Drive
-  RWD   // Rear Wheel Drive
-  AWD   // All Wheel Drive
+  FWD // Front Wheel Drive
+  RWD // Rear Wheel Drive
+  AWD // All Wheel Drive
   FOUR_WD
 }
 
@@ -387,74 +408,74 @@ enum RegistrationStatus {
 }
 
 model Listing {
-  id                  String             @id @default(cuid())
-  sellerId            String
-  createdByUserId     String?
-  categoryId          String
-  subcategoryId       String?
-  listingTitle        String
-  slug                String             @unique
-  status              ListingStatus      @default(DRAFT)
-  sellerType          SellerType
-  inventoryStage      ListingInventoryStage @default(KIGALI_STOCK)
-  inventoryPaidAt     DateTime?
-  portArrivedAt       DateTime?
-  kigaliArrivedAt     DateTime?
-  brand               String
-  model               String
-  trim                String?
-  manufacturingYear   Int
-  isNew               Boolean            @default(true)
-  condition           ConditionLevel     @default(NEW)
-  bodyType            BodyType?
-  powertrainType      PowertrainType     @default(BEV)
-  color               String?
-  seats               Int?
-  steeringPosition    SteeringPosition?
-  drivetrain          DrivetrainType?
-  mileageKm           Float?
-  hasWarranty         Boolean            @default(false)
-  warrantyDetails     String?
-  hasAccidentHistory  Boolean            @default(false)
-  ownershipCount      Int?
-  registrationStatus  RegistrationStatus?
-  vehicleLocation     String?
-  city                String?
-  country             String             @default("RW")
-  availabilityStatus  String             @default("AVAILABLE")
+  id                   String                @id @default(cuid())
+  sellerId             String
+  createdByUserId      String?
+  categoryId           String
+  subcategoryId        String?
+  listingTitle         String
+  slug                 String                @unique
+  status               ListingStatus         @default(DRAFT)
+  sellerType           SellerType
+  inventoryStage       ListingInventoryStage @default(KIGALI_STOCK)
+  inventoryPaidAt      DateTime?
+  portArrivedAt        DateTime?
+  kigaliArrivedAt      DateTime?
+  brand                String
+  model                String
+  trim                 String?
+  manufacturingYear    Int
+  isNew                Boolean               @default(true)
+  condition            ConditionLevel        @default(NEW)
+  bodyType             BodyType?
+  powertrainType       PowertrainType        @default(BEV)
+  color                String?
+  seats                Int?
+  steeringPosition     SteeringPosition?
+  drivetrain           DrivetrainType?
+  mileageKm            Float?
+  hasWarranty          Boolean               @default(false)
+  warrantyDetails      String?
+  hasAccidentHistory   Boolean               @default(false)
+  ownershipCount       Int?
+  registrationStatus   RegistrationStatus?
+  vehicleLocation      String?
+  city                 String?
+  country              String                @default("RW")
+  availabilityStatus   String                @default("AVAILABLE")
   deliveryEstimateDays Int?
-  videoUrl            String?
-  brochureUrl         String?
-  isFullOption        Boolean            @default(false)
-  description         String?
-  verificationLevel   VerificationLevel  @default(BASIC_LISTED)
-  isFeatured          Boolean            @default(false)
-  isHotDeal           Boolean            @default(false)
-  isBooked            Boolean            @default(false)
-  viewCount           Int                @default(0)
-  adminNotes          String?            // admin only, not public
-  publishedAt         DateTime?
-  expiresAt           DateTime?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  deletedAt           DateTime?
+  videoUrl             String?
+  brochureUrl          String?
+  isFullOption         Boolean               @default(false)
+  description          String?
+  verificationLevel    VerificationLevel     @default(BASIC_LISTED)
+  isFeatured           Boolean               @default(false)
+  isHotDeal            Boolean               @default(false)
+  isBooked             Boolean               @default(false)
+  viewCount            Int                   @default(0)
+  adminNotes           String? // admin only, not public
+  publishedAt          DateTime?
+  expiresAt            DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  deletedAt            DateTime?
 
-  seller              Seller             @relation(fields: [sellerId], references: [id])
-  createdBy           User?              @relation("ListingCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  category            Category           @relation(fields: [categoryId], references: [id])
-  subcategory         Subcategory?       @relation(fields: [subcategoryId], references: [id])
-  evSpecs             EvSpec?
-  listingPricing      ListingPricing?
-  photos              ListingPhoto[]
-  invoices            Invoice[]
-  orders              Order[]
-  savedBy             SavedListing[]
-  verificationReport  VerificationReport?
-  promotions          ListingPromotion[]
-  sustainabilityData  SustainabilityMetric[]
-  useCaseTags         ListingUseCase[]
-  vehicleBookings     VehicleBooking[]
-  inquiries           Inquiry[]
+  seller             Seller                 @relation(fields: [sellerId], references: [id])
+  createdBy          User?                  @relation("ListingCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  category           Category               @relation(fields: [categoryId], references: [id])
+  subcategory        Subcategory?           @relation(fields: [subcategoryId], references: [id])
+  evSpecs            EvSpec?
+  listingPricing     ListingPricing?
+  photos             ListingPhoto[]
+  invoices           Invoice[]
+  orders             Order[]
+  savedBy            SavedListing[]
+  verificationReport VerificationReport?
+  promotions         ListingPromotion[]
+  sustainabilityData SustainabilityMetric[]
+  useCaseTags        ListingUseCase[]
+  vehicleBookings    VehicleBooking[]
+  inquiries          Inquiry[]
 
   @@index([status, sellerType])
   @@index([inventoryStage])
@@ -464,38 +485,38 @@ model Listing {
 }
 
 model EvSpec {
-  id                   String   @id @default(cuid())
-  listingId            String   @unique
-  batteryCapacityKwh   Float?
-  batteryHealthPercent Float?
-  batteryHealthReport  Boolean  @default(false)
-  rangeKm              Float?
-  chargingType         String?  // AC, DC, CCS, CHAdeMO, Type2, etc.
-  fastChargingSupported Boolean @default(false)
-  chargingTimeHours    Float?
-  motorPowerKw         Float?
-  topSpeedKmh          Float?
-  payloadCapacityKg    Float?   // commercial vehicles
-  grossVehicleWeightKg Float?   // trucks/buses
-  seatingCapacity      Int?     // buses/vans
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  listingId             String   @unique
+  batteryCapacityKwh    Float?
+  batteryHealthPercent  Float?
+  batteryHealthReport   Boolean  @default(false)
+  rangeKm               Float?
+  chargingType          String? // AC, DC, CCS, CHAdeMO, Type2, etc.
+  fastChargingSupported Boolean  @default(false)
+  chargingTimeHours     Float?
+  motorPowerKw          Float?
+  topSpeedKmh           Float?
+  payloadCapacityKg     Float? // commercial vehicles
+  grossVehicleWeightKg  Float? // trucks/buses
+  seatingCapacity       Int? // buses/vans
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  listing              Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
 
   @@map("ev_specs")
 }
 
 model ListingPhoto {
-  id          String   @id @default(cuid())
-  listingId   String
-  url         String
-  altText     String?
-  isPrimary   Boolean  @default(false)
-  displayOrder Int     @default(0)
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  listingId    String
+  url          String
+  altText      String?
+  isPrimary    Boolean  @default(false)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
 
-  listing     Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
 
   @@map("listing_photos")
 }
@@ -533,8 +554,8 @@ model SavedListing {
   listingId String
   savedAt   DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
 
   @@id([userId, listingId])
   @@map("saved_listings")
@@ -546,55 +567,55 @@ model SavedListing {
 
 // Admin-configurable pricing rules per seller type and route
 model PricingRule {
-  id               String     @id @default(cuid())
-  sellerType       SellerType
-  originCountry    String?    // null = applies to all origins
-  destinationCountry String?  // null = applies to all destinations
-  shippingCostUsd  Float?
-  localChargesUsd  Float?
-  taxRatePercent   Float?
-  insuranceRatePercent Float?
-  storagePerDayUsd Float?
-  clearingFeeUsd   Float?
+  id                    String     @id @default(cuid())
+  sellerType            SellerType
+  originCountry         String? // null = applies to all origins
+  destinationCountry    String? // null = applies to all destinations
+  shippingCostUsd       Float?
+  localChargesUsd       Float?
+  taxRatePercent        Float?
+  insuranceRatePercent  Float?
+  storagePerDayUsd      Float?
+  clearingFeeUsd        Float?
   platformMarginPercent Float?
-  commissionRate   Float?
-  discountRatePercent Float?
-  deliveryDaysMin  Int?
-  deliveryDaysMax  Int?
-  isActive         Boolean    @default(true)
-  validFrom        DateTime   @default(now())
-  validUntil       DateTime?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  commissionRate        Float?
+  discountRatePercent   Float?
+  deliveryDaysMin       Int?
+  deliveryDaysMax       Int?
+  isActive              Boolean    @default(true)
+  validFrom             DateTime   @default(now())
+  validUntil            DateTime?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
   @@map("pricing_rules")
 }
 
 // Calculated price stored per listing (derived from PricingRule + listing data)
 model ListingPricing {
-  id                    String   @id @default(cuid())
-  listingId             String   @unique
-  basePriceUsd          Float?
-  fobPriceUsd           Float?
-  sellerDesiredPayoutUsd Float?  // local sellers input
-  shippingCostUsd       Float?
-  localChargesUsd       Float?
-  taxesEstimateUsd      Float?
-  insuranceUsd          Float?
-  storageUsd            Float?
-  clearingFeeUsd        Float?
-  landingCostUsd        Float?
-  marginUsd             Float?
-  commissionUsd         Float?
-  ruleDiscountUsd       Float?
-  discountUsd           Float?
-  finalPriceUsd         Float
-  currency              String   @default("USD")
-  priceValidUntil       DateTime?
-  priceNotes            String?
-  updatedAt             DateTime @updatedAt
+  id                     String    @id @default(cuid())
+  listingId              String    @unique
+  basePriceUsd           Float?
+  fobPriceUsd            Float?
+  sellerDesiredPayoutUsd Float? // local sellers input
+  shippingCostUsd        Float?
+  localChargesUsd        Float?
+  taxesEstimateUsd       Float?
+  insuranceUsd           Float?
+  storageUsd             Float?
+  clearingFeeUsd         Float?
+  landingCostUsd         Float?
+  marginUsd              Float?
+  commissionUsd          Float?
+  ruleDiscountUsd        Float?
+  discountUsd            Float?
+  finalPriceUsd          Float
+  currency               String    @default("USD")
+  priceValidUntil        DateTime?
+  priceNotes             String?
+  updatedAt              DateTime  @updatedAt
 
-  listing               Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
 
   @@map("listing_pricing")
 }
@@ -614,12 +635,12 @@ model VerificationReport {
   inspectionDate      DateTime?
   reportUrl           String?
   batteryReportUrl    String?
-  riskNotes           String?           // admin only
+  riskNotes           String? // admin only
   verifiedAt          DateTime?
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
-  listing             Listing           @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
 
   @@map("verification_reports")
 }
@@ -654,20 +675,20 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id                String        @id @default(cuid())
-  invoiceNumber     String        @unique  // e.g. UZM-INV-2026-000123
-  paymentReference  String        @unique  // e.g. UZM-PAY-2026-000483
-  userId            String
-  listingId         String?
-  invoiceType       InvoiceType   @default(PROFORMA)
-  status            InvoiceStatus @default(DRAFT)
+  id               String        @id @default(cuid())
+  invoiceNumber    String        @unique // e.g. UZM-INV-2026-000123
+  paymentReference String        @unique // e.g. UZM-PAY-2026-000483
+  userId           String
+  listingId        String?
+  invoiceType      InvoiceType   @default(PROFORMA)
+  status           InvoiceStatus @default(DRAFT)
 
   // Buyer snapshot at invoice time
-  buyerName         String
-  buyerEmail        String?
-  buyerPhone        String?
-  buyerAddress      String?
-  buyerType         String?
+  buyerName    String
+  buyerEmail   String?
+  buyerPhone   String?
+  buyerAddress String?
+  buyerType    String?
 
   // Vehicle snapshot
   vehicleBrand      String?
@@ -680,42 +701,42 @@ model Invoice {
   verificationLevel String?
 
   // Price breakdown snapshot
-  basePriceUsd      Float?
-  fobPriceUsd       Float?
-  shippingCostUsd   Float?
-  localChargesUsd   Float?
-  taxesUsd          Float?
-  insuranceUsd      Float?
-  clearingFeeUsd    Float?
-  landingCostUsd    Float?
-  marginUsd         Float?
-  ruleDiscountUsd   Float?
-  discountUsd       Float?
-  totalAmountUsd    Float
-  currency          String        @default("USD")
+  basePriceUsd    Float?
+  fobPriceUsd     Float?
+  shippingCostUsd Float?
+  localChargesUsd Float?
+  taxesUsd        Float?
+  insuranceUsd    Float?
+  clearingFeeUsd  Float?
+  landingCostUsd  Float?
+  marginUsd       Float?
+  ruleDiscountUsd Float?
+  discountUsd     Float?
+  totalAmountUsd  Float
+  currency        String @default("USD")
 
   // Payment details (USD + Rwf receiving accounts snapshotted at issue)
-  beneficiaryName   String?
-  bankName          String?
-  accountNumber     String?
-  rwfBankName       String?
-  rwfAccountNumber  String?
-  exchangeRateUsed  Float?
-  paymentDeadline   DateTime?
-  validUntil        DateTime?
-  deliveryEstimate  String?
+  beneficiaryName  String?
+  bankName         String?
+  accountNumber    String?
+  rwfBankName      String?
+  rwfAccountNumber String?
+  exchangeRateUsed Float?
+  paymentDeadline  DateTime?
+  validUntil       DateTime?
+  deliveryEstimate String?
 
-  pdfUrl            String?
-  notes             String?
-  issuedAt          DateTime?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  pdfUrl    String?
+  notes     String?
+  issuedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  user              User          @relation(fields: [userId], references: [id])
-  listing           Listing?      @relation(fields: [listingId], references: [id])
-  payments          Payment[]
-  order             Order?
-  financingRequest  FinancingRequest?
+  user             User              @relation(fields: [userId], references: [id])
+  listing          Listing?          @relation(fields: [listingId], references: [id])
+  payments         Payment[]
+  order            Order?
+  financingRequest FinancingRequest?
 
   @@index([status])
   @@index([userId])
@@ -744,30 +765,30 @@ model Payment {
   paymentDate       DateTime?
   senderName        String?
   notes             String?
-  exchangeRateUsed  Float?        // effective USD→Rwf rate when paid in RWF (or snapshotted)
+  exchangeRateUsed  Float? // effective USD→Rwf rate when paid in RWF (or snapshotted)
   status            PaymentStatus @default(SUBMITTED)
-  verifiedBy        String?       // admin user id
+  verifiedBy        String? // admin user id
   verifiedAt        DateTime?
   rejectionReason   String?
   bankStatementRef  String?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  invoice           Invoice       @relation(fields: [invoiceId], references: [id])
-  proofs            PaymentProof[]
+  invoice Invoice        @relation(fields: [invoiceId], references: [id])
+  proofs  PaymentProof[]
 
   @@map("payments")
 }
 
 model PaymentProof {
-  id          String   @id @default(cuid())
-  paymentId   String
-  fileUrl     String
-  fileType    String   // PDF, JPG, PNG, WEBP
-  fileName    String
-  uploadedAt  DateTime @default(now())
+  id         String   @id @default(cuid())
+  paymentId  String
+  fileUrl    String
+  fileType   String // PDF, JPG, PNG, WEBP
+  fileName   String
+  uploadedAt DateTime @default(now())
 
-  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   @@map("payment_proofs")
 }
@@ -810,9 +831,9 @@ model VehicleBooking {
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
-  listing           Listing              @relation(fields: [listingId], references: [id])
-  user              User                 @relation(fields: [userId], references: [id])
-  proofs            BookingPaymentProof[]
+  listing Listing               @relation(fields: [listingId], references: [id])
+  user    User                  @relation(fields: [userId], references: [id])
+  proofs  BookingPaymentProof[]
 
   @@index([listingId])
   @@index([userId])
@@ -821,14 +842,14 @@ model VehicleBooking {
 }
 
 model BookingPaymentProof {
-  id         String         @id @default(cuid())
+  id         String   @id @default(cuid())
   bookingId  String
   fileUrl    String
   fileType   String
   fileName   String
-  uploadedAt DateTime       @default(now())
+  uploadedAt DateTime @default(now())
 
-  booking    VehicleBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  booking VehicleBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@map("booking_payment_proofs")
 }
@@ -868,8 +889,8 @@ model Inquiry {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  user          User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  listing       Listing?      @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  listing Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
 
   @@index([email])
   @@index([status])
@@ -905,29 +926,29 @@ enum OrderStatus {
 }
 
 model Order {
-  id              String      @id @default(cuid())
-  orderNumber     String      @unique  // UZM-ORD-2026-000123
-  userId          String
-  listingId       String
-  invoiceId       String      @unique
-  status          OrderStatus @default(INVOICE_ISSUED)
-  sellerType      SellerType
-  vin             String?
-  shipmentId      String?
-  deliveryAddress String?
-  deliveryCity    String?
-  deliveryCountry String      @default("RW")
+  id                    String      @id @default(cuid())
+  orderNumber           String      @unique // UZM-ORD-2026-000123
+  userId                String
+  listingId             String
+  invoiceId             String      @unique
+  status                OrderStatus @default(INVOICE_ISSUED)
+  sellerType            SellerType
+  vin                   String?
+  shipmentId            String?
+  deliveryAddress       String?
+  deliveryCity          String?
+  deliveryCountry       String      @default("RW")
   estimatedDeliveryDate DateTime?
   actualDeliveryDate    DateTime?
-  handoverNotes   String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  handoverNotes         String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
 
-  user            User        @relation(fields: [userId], references: [id])
-  listing         Listing     @relation(fields: [listingId], references: [id])
-  invoice         Invoice     @relation(fields: [invoiceId], references: [id])
-  shipment        Shipment?   @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
-  trackingEvents  OrderTrackingEvent[]
+  user           User                 @relation(fields: [userId], references: [id])
+  listing        Listing              @relation(fields: [listingId], references: [id])
+  invoice        Invoice              @relation(fields: [invoiceId], references: [id])
+  shipment       Shipment?            @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  trackingEvents OrderTrackingEvent[]
 
   @@index([vin])
   @@index([shipmentId])
@@ -935,24 +956,24 @@ model Order {
 }
 
 model Shipment {
-  id                    String    @id @default(cuid())
-  documentNumber        String?   // BL / arrival notice doc no
-  vesselName            String?
-  voyageNumber          String?
-  etaAt                 DateTime?
-  portOfLoading         String?
-  portOfDischarge       String?
-  terminalOfPickup      String?
-  finalPlaceOfDelivery  String?
-  containerNumber       String?
-  sealNumber            String?
-  carrierTrackUrl       String?
-  arrivalNoticeFileUrl  String?
-  notes                 String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  documentNumber       String? // BL / arrival notice doc no
+  vesselName           String?
+  voyageNumber         String?
+  etaAt                DateTime?
+  portOfLoading        String?
+  portOfDischarge      String?
+  terminalOfPickup     String?
+  finalPlaceOfDelivery String?
+  containerNumber      String?
+  sealNumber           String?
+  carrierTrackUrl      String?
+  arrivalNoticeFileUrl String?
+  notes                String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  orders                Order[]
+  orders Order[]
 
   @@index([containerNumber])
   @@index([documentNumber])
@@ -962,14 +983,14 @@ model Shipment {
 model OrderTrackingEvent {
   id          String   @id @default(cuid())
   orderId     String
-  stage       String   // e.g. "PAYMENT_CONFIRMED", "SHIPPED", "CLEARANCE"
-  title       String   // Human-readable: "Payment Confirmed"
+  stage       String // e.g. "PAYMENT_CONFIRMED", "SHIPPED", "CLEARANCE"
+  title       String // Human-readable: "Payment Confirmed"
   description String?
   location    String?
-  performedBy String?  // admin user id
+  performedBy String? // admin user id
   occurredAt  DateTime @default(now())
 
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("order_tracking_events")
 }
@@ -988,39 +1009,39 @@ enum FinancingStatus {
 }
 
 model FinancingRequest {
-  id                    String          @id @default(cuid())
-  userId                String
-  invoiceId             String?         @unique
-  listingId             String?
-  status                FinancingStatus @default(SUBMITTED)
-  buyerName             String
-  phone                 String
-  buyerType             BuyerType?
-  employmentStatus      String?
-  organizationName      String?
-  preferredDepositUsd   Float?
-  preferredBankName     String?
-  notes                 String?
-  assignedBankId        String?
-  reviewNotes           String?         // admin only
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+  id                  String          @id @default(cuid())
+  userId              String
+  invoiceId           String?         @unique
+  listingId           String?
+  status              FinancingStatus @default(SUBMITTED)
+  buyerName           String
+  phone               String
+  buyerType           BuyerType?
+  employmentStatus    String?
+  organizationName    String?
+  preferredDepositUsd Float?
+  preferredBankName   String?
+  notes               String?
+  assignedBankId      String?
+  reviewNotes         String? // admin only
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
-  user                  User            @relation(fields: [userId], references: [id])
-  invoice               Invoice?        @relation(fields: [invoiceId], references: [id])
-  assignedBank          Bank?           @relation(fields: [assignedBankId], references: [id])
+  user         User     @relation(fields: [userId], references: [id])
+  invoice      Invoice? @relation(fields: [invoiceId], references: [id])
+  assignedBank Bank?    @relation(fields: [assignedBankId], references: [id])
 
   @@map("financing_requests")
 }
 
 model Bank {
-  id                String             @id @default(cuid())
-  name              String
-  country           String
-  contactEmail      String?
-  contactPhone      String?
-  isActive          Boolean            @default(true)
-  createdAt         DateTime           @default(now())
+  id           String   @id @default(cuid())
+  name         String
+  country      String
+  contactEmail String?
+  contactPhone String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
   financingRequests FinancingRequest[]
 
@@ -1042,68 +1063,68 @@ enum FleetRequestStatus {
 }
 
 model Association {
-  id           String        @id @default(cuid())
-  name         String
-  type         String        // TAXI, DELIVERY, TRANSPORT, etc.
-  country      String
-  city         String?
+  id            String   @id @default(cuid())
+  name          String
+  type          String // TAXI, DELIVERY, TRANSPORT, etc.
+  country       String
+  city          String?
   contactPerson String?
-  phone        String?
-  email        String?
-  isVerified   Boolean       @default(false)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  phone         String?
+  email         String?
+  isVerified    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  members      AssociationMember[]
+  members       AssociationMember[]
   fleetRequests FleetRequest[]
 
   @@map("associations")
 }
 
 model AssociationMember {
-  id            String      @id @default(cuid())
+  id            String   @id @default(cuid())
   associationId String
   userId        String?
   memberName    String
   phone         String?
   email         String?
-  role          String?     // PRESIDENT, MEMBER, etc.
-  joinedAt      DateTime    @default(now())
+  role          String? // PRESIDENT, MEMBER, etc.
+  joinedAt      DateTime @default(now())
 
-  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  association Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
 
   @@map("association_members")
 }
 
 model FleetRequest {
-  id                       String             @id @default(cuid())
-  referenceNumber          String             @unique
-  summaryPdfUrl            String?
-  userId                   String?
-  associationId            String?
-  status                   FleetRequestStatus @default(SUBMITTED)
-  organizationName         String
-  contactPerson            String
-  phone                    String
-  email                    String
-  buyerType                BuyerType
-  vehicleCategoryId        String?
-  vehicleSubcategoryId     String?
-  quantity                 Int
-  useCase                  UseCase?
+  id                        String             @id @default(cuid())
+  referenceNumber           String             @unique
+  summaryPdfUrl             String?
+  userId                    String?
+  associationId             String?
+  status                    FleetRequestStatus @default(SUBMITTED)
+  organizationName          String
+  contactPerson             String
+  phone                     String
+  email                     String
+  buyerType                 BuyerType
+  vehicleCategoryId         String?
+  vehicleSubcategoryId      String?
+  quantity                  Int
+  useCase                   UseCase?
   preferredDeliveryTimeline String?
-  budgetRangeMin           Float?
-  budgetRangeMax           Float?
-  financingRequested       Boolean            @default(false)
-  chargingSupportRequested Boolean            @default(false)
-  notes                    String?
-  adminNotes               String?
-  quotedAt                 DateTime?
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
+  budgetRangeMin            Float?
+  budgetRangeMax            Float?
+  financingRequested        Boolean            @default(false)
+  chargingSupportRequested  Boolean            @default(false)
+  notes                     String?
+  adminNotes                String?
+  quotedAt                  DateTime?
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
 
-  user                     User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
-  association              Association?       @relation(fields: [associationId], references: [id])
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  association Association? @relation(fields: [associationId], references: [id])
 
   @@index([email])
   @@map("fleet_requests")
@@ -1130,8 +1151,8 @@ model Part {
   sellerId         String?
   name             String
   slug             String        @unique
-  categorySlug     String        // batteries, motors, chargers, etc.
-  compatibleBrands String[]      // e.g. ["BYD", "Zeekr"]
+  categorySlug     String // batteries, motors, chargers, etc.
+  compatibleBrands String[] // e.g. ["BYD", "Zeekr"]
   compatibleModels String[]
   condition        PartCondition @default(NEW)
   priceUsd         Float
@@ -1146,19 +1167,19 @@ model Part {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
-  seller           Seller?       @relation(fields: [sellerId], references: [id])
-  photos           PartPhoto[]
+  seller Seller?     @relation(fields: [sellerId], references: [id])
+  photos PartPhoto[]
 
   @@map("parts")
 }
 
 model PartPhoto {
-  id       String @id @default(cuid())
-  partId   String
-  url      String
+  id        String  @id @default(cuid())
+  partId    String
+  url       String
   isPrimary Boolean @default(false)
 
-  part     Part   @relation(fields: [partId], references: [id], onDelete: Cascade)
+  part Part @relation(fields: [partId], references: [id], onDelete: Cascade)
 
   @@map("part_photos")
 }
@@ -1240,60 +1261,60 @@ enum VehicleCategory {
 }
 
 model OperatorProfile {
-  id                 String         @id @default(cuid())
-  userId             String         @unique
-  businessName       String
-  businessRegNumber  String?
-  contactPerson      String
-  phone              String
-  email              String
-  country            String
-  city               String
-  address            String?
-  logoUrl            String?
-  description        String?
-  status             OperatorStatus @default(PENDING)
-  isVerified         Boolean        @default(false)
-  verifiedAt         DateTime?
-  adminNotes         String?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  id                String         @id @default(cuid())
+  userId            String         @unique
+  businessName      String
+  businessRegNumber String?
+  contactPerson     String
+  phone             String
+  email             String
+  country           String
+  city              String
+  address           String?
+  logoUrl           String?
+  description       String?
+  status            OperatorStatus @default(PENDING)
+  isVerified        Boolean        @default(false)
+  verifiedAt        DateTime?
+  adminNotes        String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
-  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stations           ChargingStation[]
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stations ChargingStation[]
 
   @@map("operator_profiles")
 }
 
 model ChargingStation {
-  id                 String                   @id @default(cuid())
-  operatorId         String
-  name               String
-  slug               String                   @unique
-  status             StationStatus            @default(DRAFT)
-  description        String?
-  address            String
-  city               String
-  country            String
-  latitude           Float?
-  longitude          Float?
-  locationType       LocationType             @default(PUBLIC)
-  isOpen24h          Boolean                  @default(false)
-  openingHours       Json?
-  totalPorts         Int                      @default(0)
-  availablePorts     Int?
-  hasParking         Boolean                  @default(false)
-  hasWifi            Boolean                  @default(false)
-  hasRestroom        Boolean                  @default(false)
-  hasCCTV            Boolean                  @default(false)
-  hasRoofCover       Boolean                  @default(false)
-  operationalStatus  StationOperationalStatus @default(OPERATIONAL)
-  adminNotes         String?
-  publishedAt        DateTime?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
+  id                String                   @id @default(cuid())
+  operatorId        String
+  name              String
+  slug              String                   @unique
+  status            StationStatus            @default(DRAFT)
+  description       String?
+  address           String
+  city              String
+  country           String
+  latitude          Float?
+  longitude         Float?
+  locationType      LocationType             @default(PUBLIC)
+  isOpen24h         Boolean                  @default(false)
+  openingHours      Json?
+  totalPorts        Int                      @default(0)
+  availablePorts    Int?
+  hasParking        Boolean                  @default(false)
+  hasWifi           Boolean                  @default(false)
+  hasRestroom       Boolean                  @default(false)
+  hasCCTV           Boolean                  @default(false)
+  hasRoofCover      Boolean                  @default(false)
+  operationalStatus StationOperationalStatus @default(OPERATIONAL)
+  adminNotes        String?
+  publishedAt       DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
 
-  operator           OperatorProfile          @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  operator           OperatorProfile        @relation(fields: [operatorId], references: [id], onDelete: Cascade)
   ports              ChargingPort[]
   pricing            StationPricing[]
   compatibleVehicles VehicleCompatibility[]
@@ -1321,25 +1342,25 @@ model ChargingPort {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  station       ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
 
   @@map("charging_ports")
 }
 
 model StationPricing {
-  id           String             @id @default(cuid())
+  id           String              @id @default(cuid())
   stationId    String
   pricingModel StationPricingModel
   rateAmount   Float?
-  currency     String             @default("USD")
+  currency     String              @default("USD")
   notes        String?
-  isActive     Boolean            @default(true)
-  validFrom    DateTime           @default(now())
+  isActive     Boolean             @default(true)
+  validFrom    DateTime            @default(now())
   validUntil   DateTime?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
 
-  station      ChargingStation    @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
 
   @@map("station_pricing")
 }
@@ -1354,35 +1375,35 @@ model VehicleCompatibility {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
-  station         ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
 
   @@map("vehicle_compatibility")
 }
 
 model StationPhoto {
-  id           String          @id @default(cuid())
+  id           String   @id @default(cuid())
   stationId    String
   url          String
-  isPrimary    Boolean         @default(false)
-  displayOrder Int             @default(0)
-  uploadedAt   DateTime        @default(now())
+  isPrimary    Boolean  @default(false)
+  displayOrder Int      @default(0)
+  uploadedAt   DateTime @default(now())
 
-  station      ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
 
   @@map("station_photos")
 }
 
 model StationReview {
-  id         String          @id @default(cuid())
-  stationId  String
-  userId     String
-  rating     Int
-  comment    String?
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  id        String   @id @default(cuid())
+  stationId String
+  userId    String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  station    ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
-  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  station ChargingStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([stationId])
   @@index([userId])
@@ -1409,58 +1430,58 @@ enum ChargingProductType {
 }
 
 model ChargingProduct {
-  id              String              @id @default(cuid())
-  name            String
-  slug            String              @unique
-  productType     ChargingProductType
-  brand           String?
-  powerKw         Float?
-  voltage         String?
-  connectorTypes  String[]
-  solarIncluded   Boolean             @default(false)
-  priceUsd        Float?
-  description     String?
-  isActive        Boolean             @default(true)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  id             String              @id @default(cuid())
+  name           String
+  slug           String              @unique
+  productType    ChargingProductType
+  brand          String?
+  powerKw        Float?
+  voltage        String?
+  connectorTypes String[]
+  solarIncluded  Boolean             @default(false)
+  priceUsd       Float?
+  description    String?
+  isActive       Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
-  energyRequests  EnergyRequest[]
-  photos          ChargingProductPhoto[]
+  energyRequests EnergyRequest[]
+  photos         ChargingProductPhoto[]
 
   @@map("charging_products")
 }
 
 model ChargingProductPhoto {
-  id        String          @id @default(cuid())
+  id        String  @id @default(cuid())
   productId String
   url       String
-  isPrimary Boolean         @default(false)
+  isPrimary Boolean @default(false)
 
-  product   ChargingProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product ChargingProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("charging_product_photos")
 }
 
 model EnergyRequest {
-  id                    String           @id @default(cuid())
-  clientType            BuyerType?
-  location              String?
-  city                  String?
-  numberOfEvs           Int?
-  chargerTypeNeeded     ChargingProductType?
-  solarSupportNeeded    Boolean          @default(false)
-  fleetUse              Boolean          @default(false)
-  siteVisitRequested    Boolean          @default(false)
-  contactName           String
-  phone                 String
-  email                 String?
-  notes                 String?
-  status                String           @default("SUBMITTED")
-  chargingProductId     String?
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  id                 String               @id @default(cuid())
+  clientType         BuyerType?
+  location           String?
+  city               String?
+  numberOfEvs        Int?
+  chargerTypeNeeded  ChargingProductType?
+  solarSupportNeeded Boolean              @default(false)
+  fleetUse           Boolean              @default(false)
+  siteVisitRequested Boolean              @default(false)
+  contactName        String
+  phone              String
+  email              String?
+  notes              String?
+  status             String               @default("SUBMITTED")
+  chargingProductId  String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
-  chargingProduct       ChargingProduct? @relation(fields: [chargingProductId], references: [id])
+  chargingProduct ChargingProduct? @relation(fields: [chargingProductId], references: [id])
 
   @@map("energy_requests")
 }
@@ -1486,23 +1507,23 @@ enum PromotionType {
 }
 
 model Promotion {
-  id               String          @id @default(cuid())
-  name             String
-  type             PromotionType
-  sponsorName      String?
+  id                String        @id @default(cuid())
+  name              String
+  type              PromotionType
+  sponsorName       String?
   discountAmountUsd Float?
-  discountPercent  Float?
-  bannerImageUrl   String?
-  bannerPlacement  String?         // HOMEPAGE_TOP, CATEGORY_PAGE, SIDEBAR
-  startDate        DateTime
-  endDate          DateTime
-  isActive         Boolean         @default(true)
-  clickUrl         String?
-  notes            String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  discountPercent   Float?
+  bannerImageUrl    String?
+  bannerPlacement   String? // HOMEPAGE_TOP, CATEGORY_PAGE, SIDEBAR
+  startDate         DateTime
+  endDate           DateTime
+  isActive          Boolean       @default(true)
+  clickUrl          String?
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
-  listings         ListingPromotion[]
+  listings ListingPromotion[]
 
   @@map("promotions")
 }
@@ -1510,10 +1531,10 @@ model Promotion {
 model ListingPromotion {
   listingId   String
   promotionId String
-  appliedAt   DateTime  @default(now())
+  appliedAt   DateTime @default(now())
 
-  listing     Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  listing   Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
 
   @@id([listingId, promotionId])
   @@map("listing_promotions")
@@ -1524,19 +1545,19 @@ model ListingPromotion {
 // ============================================================
 
 model SustainabilityMetric {
-  id                    String   @id @default(cuid())
+  id                    String     @id @default(cuid())
   listingId             String?
   orderId               String?
   vehicleType           String?
   buyerType             BuyerType?
   fleetClientName       String?
   country               String?
-  estimatedFuelSavedL   Float?   // liters of fuel saved
-  estimatedCo2AvoidedKg Float?   // kg of CO2 avoided
+  estimatedFuelSavedL   Float? // liters of fuel saved
+  estimatedCo2AvoidedKg Float? // kg of CO2 avoided
   greenKmSupported      Float?
-  recordedAt            DateTime @default(now())
+  recordedAt            DateTime   @default(now())
 
-  listing               Listing? @relation(fields: [listingId], references: [id])
+  listing Listing? @relation(fields: [listingId], references: [id])
 
   @@map("sustainability_metrics")
 }
@@ -1564,16 +1585,16 @@ enum NotificationType {
 }
 
 model Notification {
-  id         String           @id @default(cuid())
-  userId     String
-  type       NotificationType
-  title      String
-  body       String
-  isRead     Boolean          @default(false)
-  metadata   Json?            // any extra context
-  createdAt  DateTime         @default(now())
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  isRead    Boolean          @default(false)
+  metadata  Json? // any extra context
+  createdAt DateTime         @default(now())
 
-  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
 }
@@ -1583,19 +1604,1954 @@ model Notification {
 // ============================================================
 
 model ActivityLog {
-  id           String   @id @default(cuid())
-  userId       String?
-  action       String   // e.g. "listing:approved", "payment:confirmed"
-  entity       String?  // e.g. "Listing", "Invoice"
-  entityId     String?
-  ipAddress    String?
-  userAgent    String?
-  metadata     Json?    // before/after state or extra context
-  occurredAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String // e.g. "listing:approved", "payment:confirmed"
+  entity     String? // e.g. "Listing", "Invoice"
+  entityId   String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json? // before/after state or extra context
+  occurredAt DateTime @default(now())
 
-  user         User?    @relation(fields: [userId], references: [id])
+  user User? @relation(fields: [userId], references: [id])
 
   @@index([entity, entityId])
   @@index([userId])
   @@map("activity_logs")
+}
+
+// ============================================================
+// SECTION 12 — UZA IDENTITY
+// One person, one permanent public identifier, referenced by every other UZA system.
+// Nothing in the Tunga Taxi programme works without it.
+// ============================================================
+
+/// Allocates the numeric part of a public reference, per scope, per year.
+///
+/// Mirrors how invoiceNumber and paymentReference are already minted in this codebase
+/// (UZM-INV-2026-000123), so there is one pattern here and not two.
+model IdSequence {
+  id        String   @id @default(cuid())
+  scope     String // "person", "invoice", "payment"
+  year      Int
+  lastValue Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([scope, year])
+  @@map("id_sequences")
+}
+
+/// Lets any other UZA system resolve its own local key to a UZA ID without needing a
+/// column on a table it does not own. uza-charge writes one row per driver here; the
+/// garage, the academy and anything built later do the same.
+///
+/// This is what turns "one client served by many projects" into a query rather than a
+/// reconciliation exercise.
+model IdentityLink {
+  id         String   @id @default(cuid())
+  uzaId      String
+  system     String // "uza-charge", "garage", "nexus", "unguka-portal"
+  externalId String // the primary key in that system
+  linkedAt   DateTime @default(now())
+  linkedBy   String? // the user who made the link; null when it was automatic
+
+  user User @relation(fields: [uzaId], references: [uzaId])
+
+  @@unique([system, externalId])
+  @@index([uzaId])
+  @@map("identity_links")
+}
+
+// ============================================================
+// SECTION 15 — SUPERVISED PLACEMENT
+// The 90-day operating record. This is the table the whole affordability
+// argument rests on: it is where "this driver can service the instalment"
+// stops being a claim and becomes a measurement.
+// ============================================================
+
+enum PlacementStatus {
+  ACTIVE
+  COMPLETED
+  EXTENDED // did not clear cover in 90 days; UZA kept going rather than submit
+  ENDED // stopped early; reason mandatory
+}
+
+enum PlacementDaySource {
+  APP // settled trips from the ride-hailing app — preferred
+  CHARGING // inferred from charging sessions when the app was not used
+  MANUAL // entered by a field officer; must carry enteredBy
+}
+
+model PlacementProgramme {
+  id        String          @id @default(cuid())
+  userId    String
+  listingId String? // the fleet vehicle they are placed in, not the one they will own
+  status    PlacementStatus @default(ACTIVE)
+
+  startedOn  DateTime  @db.Date
+  endedOn    DateTime? @db.Date
+  targetDays Int       @default(90)
+  endReason  String?
+
+  /// Denormalised rollups, recomputed on each day written. Kept here so the
+  /// pipeline table and the readiness engine never scan the day rows.
+  daysOperated    Int    @default(0)
+  grossRwfTotal   BigInt @default(0)
+  netRwfTotal     BigInt @default(0)
+  avgNetPerDayRwf BigInt @default(0)
+  utilisationPct  Int    @default(0) // days operated / working days available
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User           @relation(fields: [userId], references: [id])
+  days PlacementDay[]
+
+  @@index([userId, status])
+  @@map("placement_programmes")
+}
+
+/// One row per driver per calendar day. A day the driver did not work is a row
+/// with zeroes and a reason — an absent row means "we do not know", which is a
+/// different and more important thing to be able to say to a bank.
+model PlacementDay {
+  id          String             @id @default(cuid())
+  placementId String
+  day         DateTime           @db.Date
+  source      PlacementDaySource @default(APP)
+
+  operated   Boolean @default(true)
+  offReason  String? // sick, vehicle in garage, no fares, personal
+  tripsCount Int     @default(0)
+  kmDriven   Float?
+  kwhCharged Float?
+
+  grossRwf       BigInt @default(0)
+  commissionRwf  BigInt @default(0)
+  energyRwf      BigInt @default(0)
+  runningCostRwf BigInt @default(0)
+  /// Stored, not computed on read, so the cover ratio a bank saw on a given
+  /// date can be reproduced exactly even if the cost assumptions later change.
+  netRwf         BigInt @default(0)
+
+  enteredBy String? // required when source = MANUAL
+  createdAt DateTime @default(now())
+
+  placement PlacementProgramme @relation(fields: [placementId], references: [id])
+
+  @@unique([placementId, day])
+  @@index([day])
+  @@index([placementId, operated])
+  @@map("placement_days")
+}
+
+// ------------------------------------------------------------
+// Affordability, computed from this table and nowhere else:
+//
+//   monthlyNet = avgNetPerDayRwf * WORKING_DAYS_PER_MONTH   (26)
+//   cover      = monthlyNet / proposedInstalment
+//   passes     = cover >= DSCR                              (1.25)
+//
+// Rules that keep it honest:
+//   · Never accept a declared figure into this table.
+//   · MANUAL rows must carry enteredBy and should be a small minority;
+//     if most of a file is MANUAL, that is a finding, not a placement.
+//   · Non-operated days stay in the average. Excluding them would flatter
+//     every driver who works less, which is the opposite of what the bank
+//     needs to see.
+// ------------------------------------------------------------
+
+// ============================================================
+// SECTION 14 — UZA ACADEMY
+// Training that produces evidence a credit committee can read.
+// Built from the auto-entrepreneur-hub brief, not from a generic LMS:
+// the candidates are experienced drivers with low formal literacy, so
+// assessment is oral, in Kinyarwanda, and recorded.
+// ============================================================
+
+enum ModuleKind {
+  VEHICLE // the EV itself: charging, range, daily checks
+  SAFETY // road craft, assessed on road
+  LITERACY // what a loan is, the daily number, the account, a bad day
+  BUSINESS // pricing, expenses, planning — the entrepreneur half of the brief
+}
+
+enum EnrolmentStatus {
+  ENROLLED
+  IN_PROGRESS
+  COMPLETED
+  WITHDRAWN // left of their own accord
+  STOPPED // UZA ended it; reason is mandatory
+}
+
+model AcademyModule {
+  id       String     @id @default(cuid())
+  code     String     @unique // ACD-05
+  title    String
+  kind     ModuleKind
+  hours    Float
+  sequence Int
+  summary  String?
+  isActive Boolean    @default(true)
+
+  /// Modules 5 and 7 are delivered by an Unguka credit officer, not by UZA.
+  /// The driver should meet the lender before the lender is a stranger.
+  deliveredByPartner String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attendance ModuleAttendance[]
+
+  @@index([kind, sequence])
+  @@map("academy_modules")
+}
+
+model Cohort {
+  id       String    @id @default(cuid())
+  code     String    @unique // TT-2026-01
+  name     String
+  partner  String? // "Unguka Bank"
+  startsOn DateTime  @db.Date
+  endsOn   DateTime? @db.Date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  enrolments Enrolment[]
+
+  @@map("cohorts")
+}
+
+model Enrolment {
+  id       String          @id @default(cuid())
+  userId   String
+  cohortId String
+  status   EnrolmentStatus @default(ENROLLED)
+
+  enrolledAt  DateTime  @default(now())
+  completedAt DateTime?
+  stoppedAt   DateTime?
+  stopReason  String? // required when status = STOPPED
+
+  user   User   @relation(fields: [userId], references: [id])
+  cohort Cohort @relation(fields: [cohortId], references: [id])
+
+  attendance  ModuleAttendance[]
+  assessments Assessment[]
+
+  @@unique([userId, cohortId])
+  @@index([cohortId, status])
+  @@map("enrolments")
+}
+
+model ModuleAttendance {
+  id          String   @id @default(cuid())
+  enrolmentId String
+  moduleId    String
+  attendedAt  DateTime
+  assessorId  String? // userId of the trainer
+  passed      Boolean  @default(false)
+  notes       String?
+
+  enrolment Enrolment     @relation(fields: [enrolmentId], references: [id])
+  module    AcademyModule @relation(fields: [moduleId], references: [id])
+
+  @@unique([enrolmentId, moduleId])
+  @@map("module_attendance")
+}
+
+enum AssessmentKind {
+  COMPREHENSION // the six questions about the loan
+  ROAD_CRAFT // assessed on road
+  EV_CARE // daily checks, charging, when to book a job card
+}
+
+/// Immutable. A re-test writes a new row pointing at the one it supersedes,
+/// so a falling comprehension score is visible rather than overwritten —
+/// and a falling score is itself an early-warning signal.
+model Assessment {
+  id          String         @id @default(cuid())
+  enrolmentId String
+  kind        AssessmentKind
+
+  scorePct     Int // 0-100
+  language     String  @default("rw") // rw, en, fr — matches User.preferredLanguage
+  oral         Boolean @default(true)
+  recordingUrl String? // attaches to the bank file; retention policy applies
+
+  assessedAt DateTime
+  assessorId String?
+  retestOfId String? // the assessment this supersedes
+  dueAgainOn DateTime? @db.Date // day 30 and day 90 re-tests
+
+  createdAt DateTime @default(now())
+
+  enrolment Enrolment          @relation(fields: [enrolmentId], references: [id])
+  answers   AssessmentAnswer[]
+
+  @@index([enrolmentId, kind, assessedAt])
+  @@map("assessments")
+}
+
+/// One row per question. Storing answers individually is what lets UZA say
+/// "four of six, and here is which two were missed" instead of just "67%" —
+/// and it tells the trainer exactly what to re-teach.
+model AssessmentAnswer {
+  id           String  @id @default(cuid())
+  assessmentId String
+  questionCode String // LIT-Q1 .. LIT-Q6
+  correct      Boolean
+  note         String?
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id])
+
+  @@unique([assessmentId, questionCode])
+  @@map("assessment_answers")
+}
+
+// ============================================================
+// SECTION 13 — WALLET, LEDGER AND THE DAILY SPLIT
+// The repayment mechanism. Money here is whole RWF in BigInt, never Float.
+// See README, deviation 1.
+// ============================================================
+
+enum WalletStatus {
+  ACTIVE
+  SUSPENDED // frozen by UZA or the driver; sweeps stop, deposits still land
+  CLOSED
+}
+
+enum LedgerDirection {
+  CREDIT // money into the wallet
+  DEBIT // money out
+}
+
+enum LedgerReason {
+  TRIP_FARE // settled from the ride-hailing app
+  CASH_DEPOSIT // paid in at a charging station or agent
+  MOMO_DEPOSIT // MTN MoMo / Airtel Money top-up
+  COMMISSION // UZA Move commission
+  ENERGY // charging paid from the wallet
+  INSTALMENT_SWEEP // out to the driver's own bank account
+  RESERVE_FUND // into the reserve
+  RESERVE_DRAW // out of the reserve to cover a short day
+  RESERVE_RETURN // reserve paid back to the driver when the loan closes
+  WITHDRAWAL // driver takes their own money
+  ADJUSTMENT // corrections — always paired with a note, never silent
+}
+
+/// NOTE — a wallet already exists in uza-charge: public.drivers carries
+/// wallet_balance_rwf, and public.payments already accepts method = 'wallet'.
+/// It is a mutable balance with no ledger behind it. Do not build a second one
+/// beside it — see 06-uza-charge-join.sql section 3b for the two options and
+/// the decision that has to be made before any ledger code is written.
+model Wallet {
+  id     String       @id @default(cuid())
+  userId String       @unique
+  status WalletStatus @default(ACTIVE)
+
+  balanceRwf        BigInt @default(0) // spendable by the driver
+  reserveBalanceRwf BigInt @default(0) // the driver's money, ring-fenced
+  reserveTargetDays Int    @default(15) // instalment-days the reserve aims to hold
+  reserveRatePct    Int    @default(8) // % of daily net funding the reserve
+
+  openedAt  DateTime  @default(now())
+  closedAt  DateTime?
+  updatedAt DateTime  @updatedAt
+
+  user    User          @relation(fields: [userId], references: [id])
+  entries LedgerEntry[]
+  splits  DailySplit[]
+
+  @@map("wallets")
+}
+
+/// Append-only. Never updated, never deleted — a correction is a new
+/// ADJUSTMENT entry, so the history stays readable.
+model LedgerEntry {
+  id        String          @id @default(cuid())
+  walletId  String
+  direction LedgerDirection
+  reason    LedgerReason
+  amountRwf BigInt
+
+  /// Running balance after this entry, so a statement is a SELECT and never a
+  /// recomputation. If this ever disagrees with SUM(entries), the ledger is
+  /// broken and should refuse to write.
+  balanceAfterRwf        BigInt
+  reserveBalanceAfterRwf BigInt
+
+  /// The single most important column here. A MoMo callback that fires twice,
+  /// a retried job, a replayed webhook — all must land once. Build the key from
+  /// the source event, never from a timestamp.
+  ///   momo:{transactionId} · trip:{tripId} · session:{chargingSessionId}
+  ///   sweep:{walletId}:{yyyy-mm-dd}
+  idempotencyKey String @unique
+
+  externalRef String? // MoMo txn id, trip id, charging session id
+  note        String?
+  occurredAt  DateTime // when it happened in the real world
+  createdAt   DateTime @default(now()) // when we recorded it
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, occurredAt])
+  @@index([reason, occurredAt])
+  @@map("ledger_entries")
+}
+
+enum MandateStatus {
+  PENDING // signed at the branch, not yet active
+  ACTIVE
+  REVOKED // driver withdrew it — an early-warning trigger, not an error
+}
+
+/// UZA's only instrument over the driver's bank account. It authorises a
+/// transfer out of the wallet into an account in the driver's own name.
+/// It is not a debit authority over that account, and it is revocable.
+model SweepMandate {
+  id     String        @id @default(cuid())
+  userId String        @unique
+  status MandateStatus @default(PENDING)
+
+  bankName            String
+  accountHolderName   String // must match the driver, checked at the branch
+  accountNumberMasked String // last 4 only; the full number never enters this system
+  standingOrderRef    String? // the bank's own reference for savings -> loan
+
+  signedAt    DateTime
+  activatedAt DateTime?
+  revokedAt   DateTime?
+  revokedBy   String? // "driver" or a userId — revocation must be attributable
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@map("sweep_mandates")
+}
+
+/// One row per driver per working day. This is what the bank is shown when it
+/// asks "how was the instalment met on the 14th?" — and it is the table that
+/// makes a reserve draw visible before a payment is ever missed.
+model DailySplit {
+  id        String   @id @default(cuid())
+  walletId  String
+  splitDate DateTime @db.Date
+
+  grossRwf       BigInt @default(0)
+  commissionRwf  BigInt @default(0)
+  energyRwf      BigInt @default(0)
+  runningCostRwf BigInt @default(0) // maintenance, licence, insurance accrual
+  netRwf         BigInt @default(0)
+
+  instalmentRwf   BigInt @default(0) // first call on the day
+  reserveRwf      BigInt @default(0) // second
+  reserveDrawnRwf BigInt @default(0) // > 0 means the day was short
+  driverRwf       BigInt @default(0) // what was left
+
+  sweptAt   DateTime? // null until the transfer to the bank confirms
+  sweepRef  String?
+  createdAt DateTime  @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@unique([walletId, splitDate])
+  @@index([splitDate])
+  @@index([walletId, sweptAt])
+  @@map("daily_splits")
+}
+
+// ------------------------------------------------------------
+// The split rule, in order. Encode it once, here, and let every
+// caller read it — do not scatter these percentages through services.
+//
+//   net        = gross - commission - energy - runningCost
+//   instalment = min(net, dailyInstalmentDue)
+//   shortfall  = dailyInstalmentDue - instalment
+//   if shortfall > 0 -> RESERVE_DRAW of min(shortfall, reserveBalance)
+//   reserve    = reserveBalance < target ? net * reserveRatePct / 100 : 0
+//   driver     = net - instalment - reserve
+//
+// Two invariants worth asserting in code, not just hoping for:
+//   1. grossRwf - commissionRwf - energyRwf - runningCostRwf == netRwf
+//   2. instalmentRwf + reserveRwf + driverRwf <= netRwf
+// ------------------------------------------------------------
+
+// ============================================================
+// SECTION 16 — READINESS
+// Six pillars, 100 points, 70 to submit. Apply this LAST: a score computed
+// from tables that do not exist yet is a score computed from nothing.
+//
+// Not a credit score, and the API should never call it one. It is a
+// structured evidence summary with a threshold UZA imposes on itself.
+// ============================================================
+
+enum ReadinessPillar {
+  OPERATING_CAPABILITY // 25 — from placement_days
+  PAYMENT_DISCIPLINE // 25 — from Save2Own deposits and rent history
+  COMPREHENSION // 15 — from assessments
+  ASSET_STEWARDSHIP // 15 — from inspections, charging and harsh events
+  IDENTITY_COMPLIANCE // 10 — documents, TIN-linked phone, account in own name
+  SUPPORT_STRUCTURE // 10 — own contribution, collateral cover, reserve
+}
+
+enum ReadinessBand {
+  NOT_YET_FUNDABLE // < 50
+  DEVELOPING // 50-69
+  BANKABLE // 70-84
+  STRONG // 85+
+}
+
+/// Immutable snapshot. Every recomputation writes a new row; exactly one row
+/// per user carries isCurrent = true. A bank must be able to see the score as
+/// it stood on the day the file was submitted, together with the inputs that
+/// produced it — a mutable column on User cannot answer that six months later.
+model ReadinessScore {
+  id     String @id @default(cuid())
+  userId String
+
+  total Int
+  band  ReadinessBand
+
+  /// Bump when the weighting or any pillar formula changes. Two scores are only
+  /// comparable within the same modelVersion, and the bank should be told so.
+  modelVersion String @default("v1")
+
+  computedAt DateTime @default(now())
+  computedBy String? // null when computed by the nightly job
+  isCurrent  Boolean  @default(true)
+
+  /// Set when this snapshot is the one attached to a submission, so it can
+  /// never be garbage-collected and always reproduces the committee's view.
+  submittedWithFinancingRequestId String?
+
+  user    User                   @relation(fields: [userId], references: [id])
+  pillars ReadinessPillarScore[]
+
+  @@index([userId, isCurrent])
+  @@index([userId, computedAt])
+  @@map("readiness_scores")
+}
+
+model ReadinessPillarScore {
+  id      String          @id @default(cuid())
+  scoreId String
+  pillar  ReadinessPillar
+
+  points    Int
+  maxPoints Int
+
+  /// The figures the points were derived from — days operated, cover ratio,
+  /// deposit streak, assessment score. Stored so a decision is reproducible
+  /// without re-querying tables that have since moved on.
+  inputs Json
+
+  score ReadinessScore @relation(fields: [scoreId], references: [id], onDelete: Cascade)
+
+  @@unique([scoreId, pillar])
+  @@map("readiness_pillar_scores")
+}
+
+/// The evidence pack, one row per required item. Separate from the score
+/// because completeness and quality are different questions: a file can be
+/// complete and still score 54.
+model EvidenceItem {
+  id     String @id @default(cuid())
+  userId String
+
+  code  String // EV-ID, EV-LICENCE, EV-PLACEMENT, EV-COMPREHENSION, ...
+  label String
+
+  satisfiedAt  DateTime?
+  sourceSystem String? // "academy", "placement", "uza-charge", "documents"
+  sourceRef    String? // the row that satisfied it — so it is checkable
+  notes        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, code])
+  @@index([userId, satisfiedAt])
+  @@map("evidence_items")
+}
+
+// ------------------------------------------------------------
+// Rules the service must enforce, not merely document:
+//
+//  1. UZA does not submit a file below 70. The threshold belongs to UZA,
+//     not to Unguka — the bank's own policy is applied afterwards and
+//     independently.
+//  2. A pillar with no underlying data scores 0, never a default or an
+//     average. An absent placement record is not a neutral fact.
+//  3. Recompute nightly and on any source-table write. A score is a claim
+//     about today; a stale one is worse than none.
+//  4. Scores can fall. Do not clamp to the previous maximum — a driver whose
+//     utilisation drops should see it, and so should the bank.
+//  5. When a score is attached to a submission, stamp
+//     submittedWithFinancingRequestId and never delete that row.
+// ------------------------------------------------------------
+
+// ============================================================
+// SECTION 17 — CANDIDATE LIFECYCLE, DRIVER POOL, MANAGED FLEET
+//
+// The lifecycle the founder described: a person starts as a candidate, earns a
+// certificate, and then branches — some are ready for a loan, some need more
+// experience, some are waiting for a vehicle to land from China. The last two
+// groups are not idle. They are a pool of trained, equipped, insurable drivers,
+// and that pool is a business.
+//
+// Apply AFTER 01 (identity) and 03 (academy). The certificate is the gate
+// between them and everything here.
+// ============================================================
+
+enum DriverStage {
+  CANDIDATE // registered, academy not started
+  IN_ACADEMY
+  CERTIFIED // passed — this is the gate
+  POOL_AVAILABLE // certified and earning while they wait
+  FINANCING_SUBMITTED
+  FINANCING_APPROVED
+  IN_TRANSFER
+  OWNER_DRIVER // driving a vehicle they are buying
+  EXITED
+}
+
+enum PoolReason {
+  AWAITING_VEHICLE // unit ordered from China, not landed
+  BUILDING_EXPERIENCE // certified, readiness still below the submission threshold
+  AWAITING_BANK // file with the bank, decision pending
+  BY_CHOICE // wants to drive, does not want to own — a valid end state
+}
+
+model DriverProfile {
+  id     String      @id @default(cuid())
+  userId String      @unique
+  stage  DriverStage @default(CANDIDATE)
+
+  poolReason    PoolReason?
+  availableFrom DateTime?   @db.Date
+  homeDistrict  String?
+  licenceClass  String?
+  yearsDriving  Int?
+
+  /// Rolling average from completed assignments, 0-100. Owner-facing, so it
+  /// must be computed from recorded facts (completion, incidents, punctuality)
+  /// and never typed in by an account manager.
+  serviceScore Int?
+
+  stageChangedAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([stage, poolReason])
+  @@index([stage, availableFrom])
+  @@map("driver_profiles")
+}
+
+/// The certificate is a real object, not a boolean. It has a public code so a
+/// driver can show it to anyone — including an employer who is not UZA. That
+/// portability is the honest part of the promise made to candidates who do not
+/// go on to get a loan.
+model Certificate {
+  id     String @id @default(cuid())
+  userId String
+  code   String @unique // UZA-CERT-2026-000123
+
+  issuedAt  DateTime
+  expiresAt DateTime? // competence ages; a lapsed certificate should re-test
+
+  modulesPassed    Int
+  comprehensionPct Int
+  roadCraftPassed  Boolean @default(false)
+  evCarePassed     Boolean @default(false)
+
+  revokedAt    DateTime?
+  revokeReason String?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, issuedAt])
+  @@map("certificates")
+}
+
+// ------------------------------------------------------------
+// MANAGED VEHICLES
+// A vehicle UZA operates that it does not own. The owner may be an investor,
+// a company, or an individual client.
+// ------------------------------------------------------------
+
+enum VehicleOwnership {
+  UZA_FLEET // UZA's own vehicle — used for placement
+  CLIENT_MANAGED // owned by a client, operated by UZA
+  DRIVER_OWNED // financed by a driver; UZA services it but does not operate it
+}
+
+enum ManagedVehicleStatus {
+  ONBOARDING
+  ACTIVE
+  IN_GARAGE
+  IDLE // available but unassigned — the number the owner cares about most
+  OFFBOARDED
+}
+
+model ManagedVehicle {
+  id          String               @id @default(cuid())
+  ownerUserId String
+  listingId   String? // if UZA sourced it, the listing it came from
+  plate       String               @unique
+  vin         String?
+  ownership   VehicleOwnership
+  status      ManagedVehicleStatus @default(ONBOARDING)
+
+  onboardedAt  DateTime?
+  offboardedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agreement   ManagementAgreement?
+  assignments DriverAssignment[]
+  days        VehicleDay[]
+
+  @@index([ownerUserId, status])
+  @@index([status])
+  @@map("managed_vehicles")
+}
+
+enum FeeBasis {
+  PERCENT_OF_GROSS
+  FIXED_DAILY
+  FIXED_MONTHLY
+}
+
+model ManagementAgreement {
+  id               String @id @default(cuid())
+  managedVehicleId String @unique
+  ownerUserId      String
+
+  feeBasis    FeeBasis
+  feePercent  Int? // when PERCENT_OF_GROSS
+  feeFixedRwf BigInt? // when FIXED_DAILY or FIXED_MONTHLY
+
+  driverSupplied Boolean @default(true)
+  insuranceBy    String // "owner" | "uza" — must be explicit, never assumed
+  maintenanceBy  String // "owner" | "uza"
+
+  /// ⚠ LEGAL TRIPWIRE — read before setting this.
+  /// A management contract where UZA guarantees the owner a minimum income is
+  /// no longer a service contract. It is an investment promise, and combined
+  /// with UZA sourcing the vehicle and operating it, it looks like a security
+  /// in most jurisdictions — a different regulator from the BNR path already
+  /// under way. Leave this NULL unless a lawyer has signed off in writing, and
+  /// record that sign-off in guaranteeApprovalRef.
+  minGuaranteeRwf      BigInt?
+  guaranteeApprovalRef String?
+
+  startsOn     DateTime  @db.Date
+  endsOn       DateTime? @db.Date
+  signedDocRef String
+  terminatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  managedVehicle ManagedVehicle @relation(fields: [managedVehicleId], references: [id])
+
+  @@map("management_agreements")
+}
+
+// ------------------------------------------------------------
+// ASSIGNMENTS — a driver to a vehicle, for a period
+// One model covers all three cases, because they are the same fact:
+//   PLACEMENT      — pool driver in a UZA fleet vehicle, proving income
+//   MANAGED_FLEET  — pool driver in a client's vehicle, earning a fee
+//   OWNER          — the driver in the vehicle they are buying
+// ------------------------------------------------------------
+
+enum AssignmentKind {
+  PLACEMENT
+  MANAGED_FLEET
+  OWNER
+}
+
+enum AssignmentStatus {
+  SCHEDULED
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+enum AssignmentBasis {
+  DAILY
+  MONTHLY
+}
+
+enum DriverPayBasis {
+  SHARE_OF_NET // driver keeps a percentage
+  FIXED_DAILY
+  FIXED_MONTHLY
+}
+
+model DriverAssignment {
+  id               String           @id @default(cuid())
+  userId           String
+  managedVehicleId String
+  kind             AssignmentKind
+  status           AssignmentStatus @default(SCHEDULED)
+  basis            AssignmentBasis  @default(MONTHLY)
+
+  startsOn DateTime  @db.Date
+  endsOn   DateTime? @db.Date
+
+  driverPayBasis DriverPayBasis
+  driverPayRwf   BigInt? // when FIXED_*
+  driverSharePct Int? // when SHARE_OF_NET
+
+  /// ⚠ EMPLOYMENT STATUS — decide per assignment kind, not per driver.
+  /// A PLACEMENT driver is a trainee on a revenue share. A MANAGED_FLEET driver
+  /// is supplied by UZA to a paying client, scheduled by UZA and paid by UZA —
+  /// which in most readings makes them an employee, with RSSB and PAYE. Record
+  /// which it is here so payroll can be reconciled against it later, and do not
+  /// let the two blur.
+  engagement String // "trainee" | "employee" | "contractor"
+
+  requestedById String? // the owner who asked for a driver
+  endedReason   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user           User           @relation(fields: [userId], references: [id])
+  managedVehicle ManagedVehicle @relation(fields: [managedVehicleId], references: [id])
+
+  @@index([managedVehicleId, status])
+  @@index([userId, status])
+  @@index([status, startsOn])
+  @@map("driver_assignments")
+}
+
+enum DriverRequestStatus {
+  OPEN
+  MATCHED
+  FULFILLED
+  CANCELLED
+  UNFULFILLED // no driver available — count these, they size the pool
+}
+
+/// "Request a driver, daily or monthly." Kept as its own record rather than
+/// created straight as an assignment, because the requests UZA CANNOT fill are
+/// the most valuable number in the whole fleet business: they tell you exactly
+/// how many more people to put through the academy.
+model DriverRequest {
+  id               String              @id @default(cuid())
+  requestedById    String
+  managedVehicleId String?
+  basis            AssignmentBasis
+  neededFrom       DateTime            @db.Date
+  neededTo         DateTime?           @db.Date
+  district         String?
+  status           DriverRequestStatus @default(OPEN)
+
+  matchedAssignmentId String?
+  unfulfilledReason   String?
+  notes               String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, neededFrom])
+  @@map("driver_requests")
+}
+
+/// One row per managed vehicle per day. This is what the owner dashboard reads,
+/// and it deliberately mirrors PlacementDay so a vehicle can move between
+/// placement and managed-fleet use without a second reporting path.
+model VehicleDay {
+  id               String   @id @default(cuid())
+  managedVehicleId String
+  day              DateTime @db.Date
+
+  assignmentId String?
+  driverUserId String?
+
+  grossRwf         BigInt @default(0)
+  energyRwf        BigInt @default(0)
+  commissionRwf    BigInt @default(0)
+  driverPayRwf     BigInt @default(0)
+  maintenanceRwf   BigInt @default(0)
+  managementFeeRwf BigInt @default(0)
+  /// What the owner actually receives. Stored, so a statement issued in March
+  /// still reconciles in December even if the fee basis changes in between.
+  ownerNetRwf      BigInt @default(0)
+
+  operated   Boolean @default(true)
+  idleReason String? // no driver, in garage, owner withdrew it
+  kmDriven   Float?
+  tripsCount Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  managedVehicle ManagedVehicle @relation(fields: [managedVehicleId], references: [id])
+
+  @@unique([managedVehicleId, day])
+  @@index([day])
+  @@index([managedVehicleId, operated])
+  @@map("vehicle_days")
+}
+
+// ------------------------------------------------------------
+// Why the pool matters more than it looks
+//
+// Memory of this business says the binding constraint is stock, not demand. A
+// graduate who waits four months for a container is a graduate who stops
+// saving, forgets module 6, and drifts. Put the same person in the pool and
+// the wait becomes the opposite of decay:
+//
+//   · Save2Own keeps running          -> PAYMENT_DISCIPLINE keeps accruing
+//   · Trips keep being logged         -> OPERATING_CAPABILITY keeps accruing
+//   · Charging telemetry keeps flowing -> ASSET_STEWARDSHIP keeps accruing
+//
+// The waiting time stops being a cost and starts producing the evidence the
+// bank underwrites on. That is the argument for the pool — the fleet revenue
+// is the second reason, not the first.
+// ------------------------------------------------------------
+
+// ============================================================
+// SECTION 18 — MEMBERSHIP AND BENEFITS
+//
+// The UZA ID unlocking better terms at UZA and partner charging, spare parts
+// and services.
+//
+// Two design decisions that are not obvious and matter a lot:
+//
+//  1. This is NOT a discount card. A flat discount is a cost that grows with
+//     volume and buys nothing. A tier that MOVES with behaviour is a credit
+//     control: a driver repaying on time gets a better rate, a driver in
+//     arrears loses it, and the incentive points the same way the bank's does.
+//     Tie the tier to readiness and repayment, which already exist.
+//
+//  2. Every benefit must say WHO FUNDS IT and every redemption must record how
+//     it was split. A partner discount with no settlement record is an
+//     unfunded promise, and unfunded promises die quietly at renewal — usually
+//     right after the drivers have come to rely on them.
+//
+// Apply after 01 (identity) and 05 (readiness).
+// ============================================================
+
+enum MembershipTier {
+  NEW // registered, nothing proven yet
+  ACTIVE // in the academy or the pool, behaving
+  TRUSTED // repaying on time, telemetry clean — the tier worth earning
+  SUSPENDED // in arrears, mandate revoked, or certificate lapsed
+}
+
+model Membership {
+  id     String         @id @default(cuid())
+  userId String         @unique
+  tier   MembershipTier @default(NEW)
+
+  tierSince  DateTime @default(now())
+  reviewedAt DateTime @default(now())
+
+  /// Why they are on this tier, in words a field officer can read aloud to the
+  /// driver. A tier a person cannot have explained to them is a tier they will
+  /// not trust, and this one can go down as well as up.
+  reasonCode String // ON_TIME_90_DAYS, ARREARS, MANDATE_REVOKED, CERT_LAPSED
+  reasonNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User                @relation(fields: [userId], references: [id])
+  redemptions BenefitRedemption[]
+
+  @@index([tier])
+  @@map("memberships")
+}
+
+enum BenefitKind {
+  CHARGING_DISCOUNT
+  PARTS_DISCOUNT
+  SERVICE_DISCOUNT // garage labour
+  INSURANCE_RATE
+  FEE_WAIVER
+  PRIORITY_ACCESS // pool assignments, service slots, new stock
+}
+
+enum BenefitFundedBy {
+  UZA // UZA absorbs it — a marketing or credit-control cost
+  PARTNER // the partner absorbs it, in exchange for footfall
+  SHARED // split; uzaSharePct says how
+}
+
+model PartnerBenefit {
+  id            String  @id @default(cuid())
+  code          String  @unique // BEN-CHG-TRUSTED
+  partnerName   String
+  partnerUserId String? // set when the partner is a UZA account holder
+
+  kind    BenefitKind
+  minTier MembershipTier @default(ACTIVE)
+
+  discountPct      Int?
+  discountFixedRwf BigInt?
+  /// Caps stop a good idea becoming an open-ended liability. Both optional,
+  /// both strongly recommended before any benefit goes live.
+  maxPerDayRwf     BigInt?
+  maxPerMonthRwf   BigInt?
+
+  fundedBy    BenefitFundedBy
+  uzaSharePct Int? // required when fundedBy = SHARED
+
+  /// The signed agreement. A benefit without one is a verbal arrangement that
+  /// nobody will honour when the person who agreed it leaves.
+  termsRef String?
+
+  startsOn DateTime  @db.Date
+  endsOn   DateTime? @db.Date
+  isActive Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  redemptions BenefitRedemption[]
+
+  @@index([isActive, kind])
+  @@index([partnerName])
+  @@map("partner_benefits")
+}
+
+/// Append-only, idempotent, and it records the funding split at the moment of
+/// redemption — so UZA can invoice a partner, or be invoiced, from this table
+/// alone and never from a spreadsheet.
+model BenefitRedemption {
+  id        String @id @default(cuid())
+  benefitId String
+  userId    String
+  uzaId     String // denormalised on purpose: partners quote the UZA ID, not a cuid
+
+  occurredAt DateTime
+  location   String? // station id, garage, shop
+
+  grossRwf    BigInt
+  discountRwf BigInt
+
+  fundedByUzaRwf     BigInt @default(0)
+  fundedByPartnerRwf BigInt @default(0)
+
+  externalRef    String? // charging session id, invoice number, receipt
+  /// Same discipline as the ledger: a redemption that fires twice must land
+  /// once. Build it from the source event.
+  idempotencyKey String  @unique
+
+  settledAt DateTime? // when the partner was invoiced or credited
+  createdAt DateTime  @default(now())
+
+  benefit    PartnerBenefit @relation(fields: [benefitId], references: [id])
+  membership Membership     @relation(fields: [userId], references: [userId])
+
+  @@index([userId, occurredAt])
+  @@index([benefitId, occurredAt])
+  @@index([settledAt])
+  @@map("benefit_redemptions")
+}
+
+// ------------------------------------------------------------
+// Two limits to hold, whatever the commercial pressure
+//
+// 1. The ID MUST NOT STORE VALUE. The moment it holds a balance that can be
+//    spent, it is e-money and needs a BNR licence UZA does not have. It stays
+//    an identifier that unlocks a rate; payment continues to run through MoMo
+//    and the wallet. This is a cheap line to hold now and an expensive one to
+//    walk back later.
+//
+// 2. Collect only what the driver also benefits from. This table records where
+//    a person charges, what they buy and when they work. That is defensible
+//    because each entry earns them money — and stops being defensible the
+//    moment it is used for anything else, or sold. Say so in the terms the
+//    driver signs, in Kinyarwanda.
+//
+// Invariant worth asserting in code:
+//    fundedByUzaRwf + fundedByPartnerRwf == discountRwf
+// ------------------------------------------------------------
+
+// ============================================================
+// SECTION 19 — SUPPLY TRACKING AND COUNTERPARTY PARTITIONS
+//
+// Follow a vehicle by supplier and by settlement route, from requirement
+// to listing — and keep counterparties from seeing each other.
+//
+// The governing idea: THE VEHICLE IS THE JOIN, AND IT IS THE ONLY THING
+// THAT CROSSES THE PARTITION.
+//   · The supplier sees the vehicle as an order line he is owed money on.
+//   · The lender sees the same vehicle as security against a driver's loan.
+//   · Neither sees the other's relationship to it.
+// That is a permissions design, not two databases.
+//
+// Apply after 01 (identity) and 07 (pool and fleet).
+// ============================================================
+
+enum SupplierKind {
+  MANUFACTURER // direct from the factory
+  EXPORTER // sources and exports, e.g. Mento
+  TRADER
+  AUCTION
+}
+
+enum SupplierStatus {
+  PROSPECT
+  ACTIVE
+  SUSPENDED // stop new orders, finish open ones
+  CLOSED
+}
+
+model Supplier {
+  id        String         @id @default(cuid())
+  code      String         @unique // SUP-MENTO
+  legalName String // the exact registered name — payments must match it
+  kind      SupplierKind
+  status    SupplierStatus @default(PROSPECT)
+
+  country         String // where the CONTRACTING entity is registered
+  registrationNo  String?
+  addressLine     String?
+  contactName     String?
+  contactPhone    String?
+  contactEmail    String?
+  defaultCurrency String  @default("RWF")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agreements   SupplyAgreement[]
+  orders       SupplyOrder[]
+  bankAccounts SupplierBankAccount[]
+
+  @@index([status, kind])
+  @@map("suppliers")
+}
+
+/// Every supplier bank account, with the verification and the dual approval
+/// recorded. Changing supplier bank details is the commonest fraud committed
+/// against importers, and it is defeated entirely by this table being taken
+/// seriously.
+model SupplierBankAccount {
+  id         String @id @default(cuid())
+  supplierId String
+
+  /// MUST equal Supplier.legalName. Enforce it in the service, not by hope —
+  /// a company invoice paid into a personal account has no audit trail and
+  /// no counterparty.
+  accountName         String
+  bankName            String
+  branch              String?
+  accountNumberMasked String // last 4 only in this table
+  swift               String?
+  currency            String
+
+  verifiedAt     DateTime?
+  verifiedBy     String? // userId
+  verifiedMethod String? // "voice call to previously known number"
+
+  /// Two different people, or it did not happen.
+  approvedById       String?
+  secondApprovedById String?
+  approvedAt         DateTime?
+
+  isActive     Boolean @default(false)
+  replacedById String? // the account this one supersedes
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplier Supplier        @relation(fields: [supplierId], references: [id])
+  payments SupplyPayment[]
+
+  @@index([supplierId, isActive])
+  @@map("supplier_bank_accounts")
+}
+
+model SupplyAgreement {
+  id         String @id @default(cuid())
+  supplierId String
+  ref        String @unique // AGR-MENTO-2026
+
+  signedOn  DateTime? @db.Date
+  expiresOn DateTime? @db.Date
+
+  /// Defaults an Order inherits unless its own Addendum overrides them.
+  priceBasisDefault String? // "landed Kigali, duty paid, registered"
+  depositPct        Int? // 40
+  arrivalPct        Int? // 10-20 — record what was AGREED, not a range
+  isExclusive       Boolean @default(false)
+
+  docRef       String? // the signed file
+  terminatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplier Supplier      @relation(fields: [supplierId], references: [id])
+  orders   SupplyOrder[]
+
+  @@map("supply_agreements")
+}
+
+/// How the balance settles. This is the "route" dimension — every question
+/// about working capital is a question about this field.
+enum SettlementRoute {
+  PREPAID // paid in full before shipment — worst for cash
+  ROUTE_B_ON_LANDING // balance in full on Landing
+  ROUTE_A_DEFERRED // balance days after Change of Ownership, against security
+}
+
+enum SupplyOrderStatus {
+  DRAFT
+  EVIDENCE_REVIEW // photos, video, diagnostics, VIN plate received
+  ACCEPTED // UZA accepted the condition, per VIN
+  ADDENDUM_SIGNED // now binding
+  DEPOSIT_PAID
+  IN_PRODUCTION
+  SHIPPED
+  AT_PORT
+  LANDED
+  CLEARED
+  SETTLED // balance paid, security released
+  CANCELLED
+}
+
+/// One Addendum. One container, normally. This is the unit everything else
+/// hangs off — never track supply at the invoice level, because an invoice
+/// can be reissued and an Addendum cannot.
+model SupplyOrder {
+  id          String  @id @default(cuid())
+  ref         String  @unique // ADD-2026-001
+  supplierId  String
+  agreementId String?
+
+  route      SettlementRoute
+  priceBasis String // spelled out, matching the Addendum
+  currency   String
+
+  /// "Arrival" means whatever the Addendum says it means, so record it.
+  /// Port arrival and Kigali arrival are weeks and a lot of money apart.
+  arrivalDefinition String // "discharge at Dar es Salaam" | "arrival in Kigali"
+
+  depositPct      Int
+  arrivalPct      Int
+  orderValueMinor BigInt
+
+  status SupplyOrderStatus @default(DRAFT)
+
+  signedOn      DateTime? @db.Date
+  depositPaidOn DateTime? @db.Date
+  shippedOn     DateTime? @db.Date
+  vesselName    String?
+  voyageNo      String?
+  blNumber      String?
+  etaOn         DateTime? @db.Date
+  arrivedOn     DateTime? @db.Date
+  landedOn      DateTime? @db.Date
+  settledOn     DateTime? @db.Date
+
+  cancelledOn           DateTime?
+  cancelReason          String?
+  /// The deposit's route home if an Order dies. If this is null on a
+  /// cancelled Order, someone has lost money and not written down how.
+  depositRecoveredMinor BigInt?
+
+  ownerUserId String? // Scorah owns the vehicle from order to listing
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplier  Supplier             @relation(fields: [supplierId], references: [id])
+  agreement SupplyAgreement?     @relation(fields: [agreementId], references: [id])
+  vehicles  SupplyOrderVehicle[]
+  payments  SupplyPayment[]
+
+  @@index([supplierId, status])
+  @@index([status, etaOn])
+  @@index([route])
+  @@map("supply_orders")
+}
+
+model SupplyOrderVehicle {
+  id            String @id @default(cuid())
+  supplyOrderId String
+
+  /// 17 characters, and never containing I, O or Q. Validate on write — a
+  /// mistyped VIN stalls a registration and voids a comfort letter.
+  vin           String  @unique
+  brand         String
+  model         String
+  year          Int
+  colour        String?
+  mileageKm     Int?
+  batterySohPct Int? // measured, not claimed. Reject below the Addendum threshold.
+  priceMinor    BigInt
+
+  /// Pre-shipment acceptance — the step the supply contract does not have and
+  /// the process does. Nothing ships on an unaccepted VIN.
+  evidencePackRef        String?
+  evidenceAcceptedAt     DateTime?
+  evidenceAcceptedBy     String?
+  evidenceRejectedReason String?
+
+  balanceDueMinor BigInt?
+  balancePaidOn   DateTime? @db.Date
+
+  /// Set the day the supplier's security over this vehicle is released.
+  /// A vehicle with a balance paid and this still null is an open claim
+  /// against an asset someone else may already have financed.
+  securityReleasedOn DateTime? @db.Date
+
+  /// The only fields that cross the partition.
+  listingId        String? // marketplace listing once published
+  managedVehicleId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplyOrder SupplyOrder @relation(fields: [supplyOrderId], references: [id])
+
+  @@index([supplyOrderId])
+  @@index([listingId])
+  @@index([balancePaidOn, securityReleasedOn])
+  @@map("supply_order_vehicles")
+}
+
+enum SupplyPaymentStage {
+  DEPOSIT
+  ARRIVAL
+  BALANCE
+  ADJUSTMENT
+}
+
+model SupplyPayment {
+  id            String             @id @default(cuid())
+  supplyOrderId String
+  stage         SupplyPaymentStage
+  amountMinor   BigInt
+  currency      String
+
+  bankAccountId String // which verified account it actually went to
+  paidOn        DateTime @db.Date
+  proofRef      String? // uploaded proof, not an email
+
+  /// Same discipline as the driver ledger: a payment instruction that fires
+  /// twice must land once.
+  idempotencyKey String @unique
+
+  createdAt DateTime @default(now())
+
+  supplyOrder SupplyOrder         @relation(fields: [supplyOrderId], references: [id])
+  bankAccount SupplierBankAccount @relation(fields: [bankAccountId], references: [id])
+
+  @@index([supplyOrderId, stage])
+  @@map("supply_payments")
+}
+
+// ------------------------------------------------------------
+// PARTITIONS
+// ------------------------------------------------------------
+
+enum PartyScope {
+  INTERNAL // UZA staff, scoped further by role
+  SUPPLIER // sees only their own SupplyOrders
+  LENDER // sees only financing and the vehicles assigned to their borrowers
+  CUSTOMER // sees only their own vehicle, loan and wallet
+  OPERATOR // charging station owner
+}
+
+/// Binds a user account to exactly one counterparty. A supplier user with a
+/// row here can never see another supplier's prices, and never sees anything
+/// in the financing domain. A lender user never sees a SupplyOrder at all.
+model CounterpartyAccess {
+  id     String     @id @default(cuid())
+  userId String     @unique
+  scope  PartyScope
+
+  supplierId String? // set when scope = SUPPLIER
+  bankId     String? // set when scope = LENDER
+
+  grantedAt DateTime  @default(now())
+  grantedBy String?
+  revokedAt DateTime?
+
+  @@index([scope, supplierId])
+  @@index([scope, bankId])
+  @@map("counterparty_access")
+}
+
+// ------------------------------------------------------------
+// The access rules, stated once so they are not reinvented per screen:
+//
+//  1. SUPPLIER scope   -> SupplyOrder WHERE supplierId = theirs. Never
+//                         FinancingRequest, never Listing prices, never
+//                         another supplier's anything.
+//  2. LENDER scope     -> FinancingRequest for their own bank, plus the
+//                         VEHICLE facts of the assigned unit: VIN, model,
+//                         year, battery SoH, arrival date, inspection.
+//                         NEVER SupplyOrder, supplier identity, or cost.
+//  3. CUSTOMER scope   -> their own vehicle, loan, wallet, training.
+//  4. INTERNAL scope   -> by role. Scorah: full supply chain. Cecilia:
+//                         manufacturer sourcing only, no Exporter-kind
+//                         suppliers — implemented as a filter on
+//                         Supplier.kind, not as a separate system.
+//
+//  What a lender sees about a vehicle is CONDITION AND IDENTITY.
+//  What a supplier sees about a vehicle is ORDER AND MONEY.
+//  The VIN is common to both and is the only thing that is.
+//
+//  One consequence worth designing for deliberately: a vehicle should not be
+//  assignable to a financed customer while balanceDueMinor > 0 AND
+//  securityReleasedOn IS NULL — or if it is, the system should say so out
+//  loud on the file, so nobody warrants "free of encumbrances" by accident.
+// ------------------------------------------------------------
+
+// ============================================================
+// 10 · VEHICLE CLASSES AND FINANCE PRODUCTS
+//
+// Depends on: 01 (identity). Apply before 11 and 12.
+//
+// The programme was designed around one thing: a car, financed over three to five years,
+// repaid from measured daily taxi net. The lender now wants electric bikes and trucks as
+// well, and those are not cars with different numbers.
+//
+//   A bike is ~3.5M against ~27M, sells in dozens per week rather than units, repays over
+//   twelve to twenty-four months, and is lost to theft rather than to accident. Its battery
+//   may not even belong to the borrower.
+//
+//   A truck earns from contracts, not from daily fares. "Measured daily net" — the entire
+//   basis of the readiness score — does not exist for freight, so it needs a different
+//   evidence model or it should not be underwritten at all yet.
+//
+// Modelling all three as one product means every figure shown to the bank for two of them
+// is wrong. So the terms become data.
+// ============================================================
+
+/// A kind of thing UZA finances. Reference data, not a per-unit record.
+model VehicleClass {
+  id   String @id @default(cuid())
+  /// Short stable code used in refs and reporting: CAR, BIKE, TRIKE, TRUCK, BUS.
+  code String @unique
+  name String
+
+  /// Whether repayment is evidenced by measured daily takings. False for freight, where
+  /// income arrives per contract — and where the readiness score therefore cannot be
+  /// computed the way it is for a taxi. See the note on TruckEvidence below.
+  earnsDaily Boolean @default(true)
+
+  /// Roughly how many fit in a 40ft high-cube, crated as UZA actually ships them. Used by
+  /// consignment planning in migration 11; a planning figure, never a billing one.
+  unitsPerContainer Int?
+
+  /// True where the traction battery can be separated from the vehicle commercially —
+  /// financed with it, or subscribed and swapped. On a two-year bike loan the battery
+  /// residual is the largest single risk, and which way this goes changes the product,
+  /// the insurance and what theft means. Left null until it is decided, deliberately.
+  batterySeparable Boolean?
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products FinanceProduct[]
+
+  @@map("vehicle_classes")
+}
+
+/// A financing offer for one class, as agreed with one lender.
+///
+/// Versioned rather than edited. A file submitted in September must still be readable in
+/// two years against the terms that actually applied to it — editing a live product in
+/// place silently rewrites the history of every loan already written under it.
+model FinanceProduct {
+  id      String @id @default(cuid())
+  /// e.g. UZM-FP-CAR-UNGUKA-V1
+  ref     String @unique
+  name    String
+  classId String
+
+  /// The lender these terms were agreed with. Null means UZA's own book.
+  lenderName String?
+
+  /// Client contribution, in basis points to avoid float drift on money maths.
+  /// 1000 = 10%. The car product bands at 25,000,000: below it 10%, above it 15%.
+  contributionBps     Int
+  /// Set where a second band applies above a price threshold.
+  contributionBpsHigh Int?
+  bandThresholdRwf    BigInt?
+
+  /// Tenor choices offered, in months. e.g. [36, 60] for a car, [12, 24] for a bike.
+  tenorMonths Int[]
+
+  /// Comprehensive cover as a percentage of vehicle value, in basis points. 550 = 5.5%.
+  insuranceBps           Int
+  /// Whether the premium may be added to the financed amount rather than paid up front.
+  insuranceCapitalisable Boolean @default(true)
+
+  /// UZA's cash collateral contribution, in basis points of the price. Released as
+  /// principal is repaid and recycled into the next borrower — the number the whole
+  /// programme's reach depends on.
+  collateralBps Int @default(300)
+
+  /// Floor on the client's own contribution regardless of percentage, in whole RWF.
+  minContributionRwf BigInt?
+
+  /// The interest rate is deliberately NOT stored on the client-facing product. The
+  /// founder's rule stands: a borrower is shown what they pay per day over three years
+  /// or five, never a percentage. The rate lives with the lender's own schedule, and
+  /// anything that needs it computes from the instalment.
+  version       Int       @default(1)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  active        Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  class VehicleClass @relation(fields: [classId], references: [id])
+
+  @@index([classId, active])
+  @@index([lenderName])
+  @@map("finance_products")
+}
+
+/// How a battery is held for a given product. Only meaningful where the class allows it.
+///
+/// This is a product decision with a schema consequence, which is why it is an enum on the
+/// product rather than a boolean somewhere: `financed` makes battery theft a credit event,
+/// `subscription` makes it an operational one and shortens the loan.
+enum BatteryModel {
+  financed // part of the asset, part of the loan
+  subscription // UZA owns it, the rider pays monthly and swaps
+  undecided
+}
+
+/// Attached to a product rather than to a class, because the same bike could be offered
+/// both ways to different segments.
+model ProductBatteryTerms {
+  id        String       @id @default(cuid())
+  productId String       @unique
+  model     BatteryModel @default(undecided)
+
+  /// Monthly fee where model = subscription, whole RWF.
+  monthlyFeeRwf BigInt?
+  /// Swap stations the rider may use. Free text until the charging network models it.
+  swapNetwork   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("product_battery_terms")
+}
+
+/// The evidence a freight borrower offers instead of daily takings.
+///
+/// Deliberately minimal and deliberately separate. Trucks should not be underwritten on the
+/// taxi model, and the honest options are to build this properly or to defer the class —
+/// both are fine, discovering the gap at the first application is not.
+model FreightEvidence {
+  id    String @id @default(cuid())
+  ref   String @unique // e.g. UZM-FRE-2026-000012
+  uzaId String // the borrower, via migration 01
+
+  counterparty     String // who awards the contract
+  contractValueRwf BigInt
+  contractStart    DateTime
+  contractEnd      DateTime?
+  /// A scan or a signed copy. Null means the figure above is a claim, not evidence.
+  documentUrl      String?
+  verifiedById     String?
+  verifiedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([uzaId])
+  @@index([counterparty])
+  @@map("freight_evidence")
+}
+
+// ============================================================
+// 11 · CONSIGNMENTS AND ALLOCATION
+//
+// Depends on: 01 (identity), 09 (supply), 10 (classes). Apply before 12.
+//
+// At eight vehicles, allocation is a WhatsApp message. At sixty units a week it is a queue
+// with rules, and the first time a driver who paid their contribution in July watches
+// someone who applied in September ride away, the programme has a reputation problem that
+// no amount of explaining fixes.
+//
+// So allocation becomes a record with a reason attached. Every promise of a specific unit
+// to a specific person is written down, in order, with who made it and why — including
+// when the order is deliberately overridden, which happens and is fine as long as it is
+// visible.
+// ============================================================
+
+enum ConsignmentStatus {
+  planned // ordered, not yet loaded
+  loaded
+  in_transit
+  arrived_port
+  cleared
+  at_yard
+  distributed
+}
+
+/// One container, or one road/RoRo movement. The unit UZA actually plans in.
+model Consignment {
+  id     String            @id @default(cuid())
+  ref    String            @unique // e.g. UZM-CNS-2026-000041
+  status ConsignmentStatus @default(planned)
+
+  /// Which supplier and agreement it came from — migration 09.
+  supplyOrderRef String?
+  containerNo    String?
+  vesselOrTruck  String?
+
+  originPort      String?
+  destinationPort String?
+
+  /// Planned dates first, actuals as they happen. Both kept: the gap between them is the
+  /// only honest input to the next plan's lead time.
+  etdPlanned DateTime?
+  etaPlanned DateTime?
+  etdActual  DateTime?
+  etaActual  DateTime?
+  clearedAt  DateTime?
+
+  /// Declared totals. Verified against the packing list by François from September —
+  /// understated CBM is discovered at the port, when it is expensive.
+  declaredWeightKg Int?
+  declaredCbm      Float?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  units ConsignmentUnit[]
+
+  @@index([status])
+  @@index([etaPlanned])
+  @@map("consignments")
+}
+
+enum UnitStatus {
+  in_consignment
+  at_yard
+  allocated // promised to a named person
+  registered // ownership transferred
+  delivered
+  returned
+}
+
+/// One physical thing — a car, a bike, a truck — inside a consignment.
+///
+/// `vin` is nullable because bikes frequently arrive with a frame number rather than a
+/// seventeen-character VIN, and forcing one produces invented data. `identifier` always
+/// holds whatever actually identifies the unit.
+model ConsignmentUnit {
+  id            String @id @default(cuid())
+  ref           String @unique // e.g. UZM-UNT-2026-000913
+  consignmentId String
+  classCode     String // VehicleClass.code — CAR, BIKE, TRUCK
+
+  identifier String  @unique // VIN, frame number, or chassis number
+  vin        String?
+  make       String?
+  model      String?
+  colour     String?
+  batteryNo  String? // where the battery is separable and tracked in its own right
+
+  status UnitStatus @default(in_consignment)
+
+  /// Landed cost in whole RWF, filled once freight and duty are known. Not a price.
+  landedCostRwf BigInt?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  consignment Consignment  @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+  allocations Allocation[]
+
+  @@index([consignmentId])
+  @@index([status])
+  @@index([classCode, status])
+  @@map("consignment_units")
+}
+
+enum AllocationStatus {
+  queued
+  promised // a specific unit is held for this person
+  confirmed // they have accepted it
+  declined
+  fulfilled
+  lapsed // they did not respond in time and went back in the queue
+}
+
+/// A person's place in the line for a class of vehicle.
+///
+/// `position` is not stored — a stored rank goes stale the moment anyone is inserted or
+/// removed, and then two screens disagree about who is next. Order is derived at read time
+/// from `readyAt`, and `priorityReason` records every deliberate departure from it.
+model AllocationQueue {
+  id        String @id @default(cuid())
+  ref       String @unique // e.g. UZM-AQ-2026-000188
+  uzaId     String // the applicant, via migration 01
+  classCode String
+
+  /// When they became genuinely ready — contribution paid, training complete, bank file
+  /// approved. NOT when they applied. Queue order that rewards early enquiry rather than
+  /// readiness is how a paid-up applicant ends up behind someone who is not.
+  readyAt DateTime
+
+  /// A stated preference. Recorded because ignoring it silently is worse than not asking,
+  /// and because a driver who insists on one model may reasonably wait longer.
+  preferredMake  String?
+  preferredModel String?
+
+  /// Set only when someone is moved out of readiness order. Required by the service, so
+  /// jumping the queue is always possible and never invisible.
+  priorityReason  String?
+  prioritisedById String?
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  allocations Allocation[]
+
+  @@unique([uzaId, classCode]) // one place in the line per class per person
+  @@index([classCode, readyAt])
+  @@map("allocation_queue")
+}
+
+/// A specific unit promised to a specific person, with a clock on it.
+model Allocation {
+  id      String           @id @default(cuid())
+  ref     String           @unique // e.g. UZM-ALC-2026-000204
+  unitId  String
+  queueId String
+  status  AllocationStatus @default(promised)
+
+  promisedAt  DateTime  @default(now())
+  /// How long the promise holds. A unit reserved indefinitely for someone who has stopped
+  /// answering is a unit not earning, so the offer expires and the queue moves on.
+  expiresAt   DateTime
+  respondedAt DateTime?
+  fulfilledAt DateTime?
+
+  /// Why it was declined or allowed to lapse. Feeds the next plan: a make nobody accepts
+  /// is a sourcing error, not a customer problem.
+  outcomeNote String?
+
+  decidedById String? // the employee who made the promise
+
+  /// Mirrors `unitId` while the promise is live (promised or confirmed) and is set to NULL
+  /// the moment it ends. Unique, so a unit cannot be held by two people at once — and
+  /// because Postgres permits many NULLs, any number of people may have previously
+  /// declined the same unit, which is normal and must stay possible.
+  ///
+  /// A plain `@@unique([unitId, status])` would have been wrong: it enforces one promise
+  /// per unit, but it also silently forbids a second person ever declining a unit somebody
+  /// already declined. The service sets and clears this column on every status change.
+  activeHoldUnitId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  unit  ConsignmentUnit @relation(fields: [unitId], references: [id])
+  queue AllocationQueue @relation(fields: [queueId], references: [id])
+
+  @@index([unitId])
+  @@index([queueId])
+  @@index([expiresAt])
+  @@map("allocations")
+}
+
+// ============================================================
+// 12 · BANK FILE ASSEMBLY
+//
+// Depends on: 01 (identity), 03 (academy), 05 (readiness), 10 (products), 11 (allocation).
+// Apply last.
+//
+// Eleven documents per applicant. At sixty units a week that is 693 documents a week, and
+// no number of officers makes that work — two more people doubles the throughput and
+// doubles the error rate.
+//
+// The way out is that most of those eleven are not documents at all. They are facts the
+// platform already holds: who the person is, what they scored, what they contributed, which
+// VIN they were allocated, what the product terms were on the day. Only a handful are
+// genuinely external — an ID scan, a licence, a CRB report. So the file is generated, the
+// external items are attached, and the officer's job becomes checking rather than
+// collecting.
+// ============================================================
+
+enum BankFileStatus {
+  building // items still outstanding
+  ready // everything present, not yet sent
+  submitted
+  queried // the lender came back with a question
+  approved
+  declined
+  withdrawn
+}
+
+/// Where an item comes from. This is the field that decides whether volume is possible:
+/// `generated` items cost nothing per file, `uploaded` ones cost a person's attention.
+enum ItemSource {
+  generated // produced from records the platform already holds
+  uploaded // a human had to obtain and attach it
+  external // fetched from a third party, e.g. a credit reference
+}
+
+/// One applicant's submission to one lender for one allocated unit.
+model BankFile {
+  id     String         @id @default(cuid())
+  ref    String         @unique // e.g. UZM-BF-2026-000451
+  status BankFileStatus @default(building)
+
+  uzaId         String // the applicant, via migration 01
+  lenderName    String
+  productRef    String // FinanceProduct.ref — the terms as at submission
+  allocationRef String? // the unit promised to them, via migration 11
+
+  /// The commercial shape at the moment of submission, copied rather than referenced.
+  /// A file must remain readable in two years against the numbers that actually applied,
+  /// and product terms are versioned precisely because they change.
+  pricePaidRwf      BigInt?
+  contributionRwf   BigInt?
+  insuranceRwf      BigInt?
+  financedAmountRwf BigInt?
+  tenorMonths       Int?
+
+  /// Copied from the readiness snapshot that was current when the file was built —
+  /// migration 05 keeps those immutable for exactly this reason.
+  readinessScoreRef String?
+
+  submittedAt   DateTime?
+  decidedAt     DateTime?
+  /// The lender's own reference, so a query from them can be found without searching.
+  lenderRef     String?
+  declineReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items  BankFileItem[]
+  events BankFileEvent[]
+
+  @@index([status])
+  @@index([uzaId])
+  @@index([lenderName, status])
+  @@map("bank_files")
+}
+
+/// One of the eleven, in one file.
+///
+/// Rows are created for every required item as soon as the file opens, `present = false`.
+/// A file is `ready` when none remain outstanding — which makes "what is missing" a query
+/// rather than a person's memory, and makes the weekly bottleneck visible by item type.
+model BankFileItem {
+  id         String     @id @default(cuid())
+  bankFileId String
+  /// Stable code so reporting survives a wording change: NATIONAL_ID, DRIVING_LICENCE,
+  /// CRB_REPORT, TRAINING_CERTIFICATE, READINESS_SCORE, INCOME_EVIDENCE, CONTRIBUTION_PROOF,
+  /// PROFORMA, INSURANCE_QUOTE, VEHICLE_ALLOCATION, APPLICATION_FORM.
+  code       String
+  label      String
+  source     ItemSource
+
+  present      Boolean   @default(false)
+  /// Where the artefact lives. Null for a generated item that is rendered on demand.
+  documentUrl  String?
+  generatedAt  DateTime?
+  uploadedById String?
+  uploadedAt   DateTime?
+
+  /// A second pair of eyes, required only on items where a mistake is expensive — the
+  /// CRB report and the contribution proof. Left null elsewhere rather than performing a
+  /// check nobody actually does.
+  verifiedById String?
+  verifiedAt   DateTime?
+
+  /// Set when the lender queries this specific item, so a re-submission goes straight to
+  /// what was wrong instead of resending everything.
+  queryNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  file BankFile @relation(fields: [bankFileId], references: [id], onDelete: Cascade)
+
+  @@unique([bankFileId, code])
+  @@index([code, present])
+  @@map("bank_file_items")
+}
+
+/// An append-only history of what happened to the file.
+///
+/// Separate from `updatedAt` because the question a lender asks six months later is not
+/// "when did this change" but "who sent it, when, and what did we say" — and a mutable row
+/// cannot answer that.
+model BankFileEvent {
+  id         String   @id @default(cuid())
+  bankFileId String
+  at         DateTime @default(now())
+  actorId    String?
+  /// opened, item_added, item_verified, marked_ready, submitted, queried, resubmitted,
+  /// approved, declined, withdrawn
+  kind       String
+  detail     String?
+
+  file BankFile @relation(fields: [bankFileId], references: [id], onDelete: Cascade)
+
+  @@index([bankFileId, at])
+  @@map("bank_file_events")
+}
+
+/// The lender's own volume commitment, recorded so throughput can be planned against it.
+///
+/// UZA's constraint is now operational rather than financial, but that only holds while the
+/// commitment holds. Writing it down means the day it changes is visible immediately rather
+/// than discovered when a file is declined.
+model LenderCommitment {
+  id         String @id @default(cuid())
+  ref        String @unique // e.g. UZM-LC-2026-0001
+  lenderName String
+  classCode  String // which class the commitment covers
+
+  /// Units the lender has said it will finance in the period. The number that sizes
+  /// sourcing, staffing and every system in this pack.
+  unitsCommitted Int
+  periodStart    DateTime
+  periodEnd      DateTime
+
+  /// Whether it exists on paper. A verbal commitment is worth planning around and is not
+  /// worth financing against, and the distinction should be one column rather than an
+  /// argument.
+  documented  Boolean @default(false)
+  documentUrl String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([lenderName, classCode])
+  @@map("lender_commitments")
 }
