@@ -26,6 +26,7 @@ import { PromotionsModule } from './modules/promotions/promotions.module';
 import { SustainabilityModule } from './modules/sustainability/sustainability.module';
 import { FinancingModule } from './modules/financing/financing.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
+import { BankFilesModule } from './modules/bank-files/bank-files.module';
 import { InquiriesModule } from './modules/inquiries/inquiries.module';
 import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { ChargingStationsModule } from './modules/charging-stations/charging-stations.module';
@@ -64,6 +65,7 @@ import { MongoModule } from './mongo/mongo.module';
     SustainabilityModule,
     FinancingModule,
     BookingsModule,
+    BankFilesModule,
     InquiriesModule,
     PlatformSettingsModule,
     ChargingStationsModule,
