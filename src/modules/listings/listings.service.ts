@@ -13,6 +13,7 @@ import {
 } from '@prisma/client';
 import { UploadsModule } from '../../common/uploads/uploads.module';
 import { StorageService } from '../../common/uploads/storage.service';
+import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { resolveUniqueSlug } from '../../common/utils/slug.util';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -47,6 +48,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import type { NotificationMetadata } from '../notifications/notifications.types';
 import { PricingService } from '../pricing/pricing.service';
+import { ExchangeRateService } from '../platform-settings/exchange-rate.service';
 import { SellersService } from '../sellers/sellers.service';
 import { UsersService } from '../../users/users.service';
 import {
@@ -65,7 +67,6 @@ import {
   mergeListingEvSpecInput,
 } from './listing-ev-spec.util';
 import type { PreviewListingPricingDto } from './dto/preview-listing-pricing.dto';
-import { AuditService } from 'src/common/audit/audit.service';
 
 type ListingSellerNotifyTarget = {
   listingTitle: string;
@@ -83,6 +84,7 @@ export class ListingsService {
     private readonly sellersService: SellersService,
     private readonly usersService: UsersService,
     private readonly pricingService: PricingService,
+    private readonly exchangeRateService: ExchangeRateService,
     private readonly promotionsService: PromotionsService,
     private readonly storage: StorageService,
   ) {}
@@ -90,13 +92,14 @@ export class ListingsService {
   private async mapPublicListings<
     T extends Parameters<typeof toPublicListing>[0],
   >(rows: T[]) {
+    const frozenRate = await this.exchangeRateService.getFrozenRate();
     const promotionMap =
       await this.promotionsService.getBestDisplayByListingIds(
         rows.map((r) => r.id),
       );
 
     return rows.map((row) =>
-      toPublicListing(row, promotionMap.get(row.id) ?? null),
+      toPublicListing(row, promotionMap.get(row.id) ?? null, frozenRate),
     );
   }
 
@@ -122,7 +125,7 @@ export class ListingsService {
         country: true,
         manufacturingYear: true,
         mileageKm: true,
-        listingPricing: { select: { finalPriceUsd: true } },
+        listingPricing: { select: { displayPriceRwf: true, finalPriceRwf: true, finalPriceUsd: true } },
         evSpecs: { select: { batteryCapacityKwh: true } },
       },
     });
@@ -141,6 +144,7 @@ export class ListingsService {
     let mileageMax = -Infinity;
     let priceMin = Infinity;
     let priceMax = -Infinity;
+    const frozenRate = await this.exchangeRateService.getFrozenRate();
 
     for (const row of listings) {
       if (row.brand) brands.add(row.brand);
@@ -159,7 +163,12 @@ export class ListingsService {
         mileageMin = Math.min(mileageMin, row.mileageKm);
         mileageMax = Math.max(mileageMax, row.mileageKm);
       }
-      const price = row.listingPricing?.finalPriceUsd;
+      const price =
+        row.listingPricing?.displayPriceRwf ??
+        row.listingPricing?.finalPriceRwf ??
+        (row.listingPricing?.finalPriceUsd != null
+          ? Math.round(row.listingPricing.finalPriceUsd * frozenRate)
+          : null);
       if (price != null) {
         priceMin = Math.min(priceMin, price);
         priceMax = Math.max(priceMax, price);
@@ -290,8 +299,9 @@ export class ListingsService {
       throw new NotFoundException('Listing not found');
     }
 
+    const frozenRate = await this.exchangeRateService.getFrozenRate();
     const promotionDisplay =
-      listing.listingPricing?.finalPriceUsd != null
+      listing.listingPricing != null
         ? await this.promotionsService.getBestDisplayForListing(
             listing.id,
             listing.listingPricing.finalPriceUsd,
@@ -299,7 +309,7 @@ export class ListingsService {
         : null;
 
     if (listing.status === ListingStatus.SOLD) {
-      return toPublicListing(listing, promotionDisplay);
+      return toPublicListing(listing, promotionDisplay, frozenRate);
     }
 
     await this.prisma.listing.update({
@@ -310,6 +320,7 @@ export class ListingsService {
     return toPublicListing(
       { ...listing, viewCount: listing.viewCount + 1 },
       promotionDisplay,
+      frozenRate,
     );
   }
 
@@ -479,10 +490,10 @@ export class ListingsService {
     }
 
     const pricingInput = {
-      basePriceUsd: dto.basePriceUsd,
-      fobPriceUsd: dto.fobPriceUsd,
-      sellerDesiredPayoutUsd: dto.sellerDesiredPayoutUsd,
-      discountUsd: dto.discountUsd,
+      basePriceRwf: dto.basePriceRwf,
+      fobPriceRwf: dto.fobPriceRwf,
+      sellerDesiredPayoutRwf: dto.sellerDesiredPayoutRwf,
+      discountRwf: dto.discountRwf,
     };
 
     assertListingPricingInput(sellerType, pricingInput);
@@ -1373,18 +1384,25 @@ export class ListingsService {
     originCountry: string | undefined,
     partial: CreateListingPricingDto,
     existing?: {
+      currency?: string | null;
       basePriceUsd: number | null;
       fobPriceUsd: number | null;
       sellerDesiredPayoutUsd: number | null;
       discountUsd: number | null;
+      basePriceRwf?: number | null;
+      fobPriceRwf?: number | null;
+      sellerDesiredPayoutRwf?: number | null;
+      discountRwf?: number | null;
     } | null,
     deliveryEstimateDays?: number,
   ): Promise<{
     pricing: Prisma.ListingPricingCreateWithoutListingInput;
     deliveryDaysMax: number;
   }> {
+    const frozenRate = await this.exchangeRateService.getFrozenRate();
+
     const input = existing
-      ? mergeListingPricingInput(sellerType, partial, existing)
+      ? mergeListingPricingInput(sellerType, partial, existing, frozenRate)
       : partial;
 
     if (!existing) {
@@ -1396,12 +1414,14 @@ export class ListingsService {
       toPricingInput(input),
       originCountry,
       partial.pricingRuleId,
+      frozenRate,
     );
 
     return {
       pricing: breakdownToListingPricingCreate(
         breakdown,
         partial.pricingRuleId,
+        existing,
       ),
       deliveryDaysMax:
         deliveryEstimateDays ?? deliveryDaysFromBreakdown(breakdown),
@@ -1973,6 +1993,12 @@ export class ListingsService {
           fobPriceUsd: unknown;
           discountUsd: unknown;
           finalPriceUsd: unknown;
+          basePriceRwf?: unknown;
+          fobPriceRwf?: unknown;
+          discountRwf?: unknown;
+          finalPriceRwf?: unknown;
+          displayPriceRwf?: unknown;
+          currency?: string | null;
           pricingRuleId?: string | null;
           priceNotes?: string | null;
         }
@@ -1991,10 +2017,11 @@ export class ListingsService {
     };
 
     return (
-      asNumber(next.basePriceUsd) !== asNumber(existing.basePriceUsd) ||
-      asNumber(next.fobPriceUsd) !== asNumber(existing.fobPriceUsd) ||
-      asNumber(next.discountUsd) !== asNumber(existing.discountUsd) ||
-      asNumber(next.finalPriceUsd) !== asNumber(existing.finalPriceUsd) ||
+      asNumber(next.basePriceRwf) !== asNumber(existing.basePriceRwf) ||
+      asNumber(next.fobPriceRwf) !== asNumber(existing.fobPriceRwf) ||
+      asNumber(next.discountRwf) !== asNumber(existing.discountRwf) ||
+      asNumber(next.finalPriceRwf) !== asNumber(existing.finalPriceRwf) ||
+      (next.currency ?? null) !== (existing.currency ?? null) ||
       (next.priceNotes ?? null) !== (existing.priceNotes ?? null)
     );
   }
@@ -2080,7 +2107,8 @@ export class ListingsService {
       listing.inventoryStage === ListingInventoryStage.KIGALI_STOCK &&
       stage === ListingInventoryStage.KIGALI_STOCK &&
       (listing.sellerType === SellerType.UZA_CHINA_SOURCING ||
-        listing.listingPricing?.basePriceUsd == null)
+        (listing.listingPricing?.basePriceRwf == null &&
+          listing.listingPricing?.basePriceUsd == null))
     ) {
       const rwandaSeller = await this.resolveAdminSellerProfile(
         ownerUserId,
@@ -2211,7 +2239,7 @@ export class ListingsService {
   }
 
   /**
-   * China listings store FOB; Rwanda stock expects basePriceUsd.
+   * China listings store FOB; Rwanda stock expects a Rwanda base price.
    * Keep the buyer list price stable when switching channels.
    */
   private async migratePricingForInventoryChannel(
@@ -2230,26 +2258,38 @@ export class ListingsService {
       value == null ? null : Number(value);
 
     if (targetSellerType === SellerType.UZA_RWANDA_STOCK) {
-      const basePriceUsd =
+      const basePriceRwf =
+        asNumber(pricing.basePriceRwf) ??
+        asNumber(pricing.finalPriceRwf) ??
+        asNumber(pricing.displayPriceRwf) ??
         asNumber(pricing.basePriceUsd) ??
         asNumber(pricing.finalPriceUsd) ??
         asNumber(pricing.fobPriceUsd);
-      if (basePriceUsd == null) return;
+      if (basePriceRwf == null) return;
+
+      const frozenRate = await this.exchangeRateService.getFrozenRate();
+      const asRwf =
+        pricing.currency === 'RWF' || pricing.basePriceRwf != null
+          ? basePriceRwf
+          : Math.round(basePriceRwf * frozenRate);
 
       const { pricing: nextPricing } = await this.resolveListingPricing(
         SellerType.UZA_RWANDA_STOCK,
         originCountry ?? 'RW',
         {
-          basePriceUsd,
-          discountUsd: asNumber(pricing.discountUsd) ?? undefined,
+          basePriceRwf: asRwf,
+          discountRwf: asNumber(pricing.discountRwf) ?? undefined,
           pricingRuleId,
         },
+        pricing,
       );
 
-      // Preserve the published buyer list price through the channel switch.
-      nextPricing.finalPriceUsd = pricing.finalPriceUsd;
-      if (pricing.fobPriceUsd != null) {
-        nextPricing.fobPriceUsd = pricing.fobPriceUsd;
+      if (pricing.finalPriceRwf != null) {
+        nextPricing.finalPriceRwf = pricing.finalPriceRwf;
+        nextPricing.displayPriceRwf = pricing.finalPriceRwf;
+      }
+      if (pricing.fobPriceRwf != null) {
+        nextPricing.fobPriceRwf = pricing.fobPriceRwf;
       }
 
       await this.prisma.listingPricing.update({
@@ -2260,24 +2300,33 @@ export class ListingsService {
     }
 
     if (targetSellerType === SellerType.UZA_CHINA_SOURCING) {
-      const fobPriceUsd =
+      const fobPriceRwf =
+        asNumber(pricing.fobPriceRwf) ??
+        asNumber(pricing.finalPriceRwf) ??
         asNumber(pricing.fobPriceUsd) ??
         asNumber(pricing.basePriceUsd) ??
         asNumber(pricing.finalPriceUsd);
-      if (fobPriceUsd == null) return;
+      if (fobPriceRwf == null) return;
+
+      const frozenRate = await this.exchangeRateService.getFrozenRate();
+      const asRwf =
+        pricing.currency === 'RWF' || pricing.fobPriceRwf != null
+          ? fobPriceRwf
+          : Math.round(fobPriceRwf * frozenRate);
 
       const { pricing: nextPricing } = await this.resolveListingPricing(
         SellerType.UZA_CHINA_SOURCING,
         originCountry ?? 'CN',
         {
-          fobPriceUsd,
-          discountUsd: asNumber(pricing.discountUsd) ?? undefined,
+          fobPriceRwf: asRwf,
+          discountRwf: asNumber(pricing.discountRwf) ?? undefined,
           pricingRuleId,
         },
+        pricing,
       );
 
-      if (pricing.basePriceUsd != null) {
-        nextPricing.basePriceUsd = pricing.basePriceUsd;
+      if (pricing.basePriceRwf != null) {
+        nextPricing.basePriceRwf = pricing.basePriceRwf;
       }
 
       await this.prisma.listingPricing.update({

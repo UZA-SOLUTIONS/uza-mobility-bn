@@ -1,9 +1,12 @@
 import { InquiryIntent } from '@prisma/client';
 import {
   dualBankParamsFromCompany,
-  formatDualBankAccountsHtml,
+  formatInvoiceBankAccountsHtml,
 } from '../money/dual-bank-accounts.util';
-import { formatDualMoney } from '../money/money-format.util';
+import {
+  formatMoneyRwf,
+  toDisplayRwf,
+} from '../money/money-format.util';
 import {
   buildBrandedEmailHtml,
   escapeHtml,
@@ -20,7 +23,7 @@ export type CommerceConfirmationEmailParams = {
   referenceNumber: string;
   intent: InquiryIntent;
   company: CompanyPaymentDetails;
-  bookingFeeUsd: number;
+  bookingFeeRwf: number;
   usdToRwfEffective: number;
   whatsappUrl?: string;
   /** When set, show account CTA instead of WhatsApp (authenticated buyers). */
@@ -33,23 +36,25 @@ export function buildCommerceConfirmationEmail(
   params: CommerceConfirmationEmailParams,
 ): { subject: string; html: string; text: string } {
   const isBuy = params.intent === InquiryIntent.BUY;
-  const priceUsd = params.listing.listingPricing?.finalPriceUsd;
-  const priceLabel = formatDualMoney(priceUsd, params.usdToRwfEffective, {
-    unit: 'USDT',
+  const priceRwf = toDisplayRwf({
+    currency: params.listing.listingPricing?.currency,
+    amountRwf:
+      params.listing.listingPricing?.finalPriceRwf ??
+      params.listing.listingPricing?.displayPriceRwf,
+    amountUsd: params.listing.listingPricing?.finalPriceUsd,
+    frozenRate: params.usdToRwfEffective,
   });
-  const bookingFeeLabel = formatDualMoney(
-    params.bookingFeeUsd,
-    params.usdToRwfEffective,
-    { unit: 'USDT' },
-  );
+  const priceLabel = formatMoneyRwf(priceRwf);
+  const bookingFeeLabel = formatMoneyRwf(params.bookingFeeRwf);
   const deliveryDays = params.listing.deliveryEstimateDays;
   const firstName = params.recipientName.split(' ')[0] ?? params.recipientName;
   const bankParams = dualBankParamsFromCompany(params.company);
 
   const formatPaymentBlock = () => `
         <p style="margin: 12px 0 0">How to pay</p>
-        ${formatDualBankAccountsHtml({
+        ${formatInvoiceBankAccountsHtml({
           ...bankParams,
+          currency: 'RWF',
           escapeHtml,
         })}
         <ul style="margin: 4px 0 0; padding-left: 18px; color: #424a53; font-size: 14px; line-height: 22px">
@@ -66,7 +71,7 @@ export function buildCommerceConfirmationEmail(
           <li>Delivery estimate: ${deliveryDays != null ? `${deliveryDays} days` : 'Confirmed after payment'}</li>
           <li>Seller: ${escapeHtml(params.listing.sellerType.replace(/_/g, ' '))}</li>
         </ul>
-        <p style="margin: 0 0 12px">To proceed with your purchase, transfer the full vehicle price (${escapeHtml(priceLabel)}) using one of the bank accounts below. Include reference ${escapeHtml(params.referenceNumber)} in your transfer.</p>
+        <p style="margin: 0 0 12px">To proceed with your purchase, transfer the full vehicle price (${escapeHtml(priceLabel)}) to the Rwf account below. Include reference ${escapeHtml(params.referenceNumber)} in your transfer.</p>
         ${formatPaymentBlock()}
         <p style="margin: 12px 0 0">This vehicle is not reserved until payment is confirmed. Contact us if you have questions.</p>`
     : `
@@ -79,7 +84,7 @@ export function buildCommerceConfirmationEmail(
           <li>Delivery estimate: ${deliveryDays != null ? `${deliveryDays} days` : 'Confirmed at reservation'}</li>
           <li>Seller: ${escapeHtml(params.listing.sellerType.replace(/_/g, ' '))}</li>
         </ul>
-        <p style="margin: 0 0 12px">To secure this vehicle, pay the booking fee (${escapeHtml(bookingFeeLabel)}) using one of the bank accounts below. Include reference ${escapeHtml(params.referenceNumber)} in your transfer. The remaining balance is due before delivery.</p>
+        <p style="margin: 0 0 12px">To secure this vehicle, pay the booking fee (${escapeHtml(bookingFeeLabel)}) to the Rwf account below. Include reference ${escapeHtml(params.referenceNumber)} in your transfer. The remaining balance is due before delivery.</p>
         ${formatPaymentBlock()}
         <p style="margin: 12px 0 0">This vehicle is not reserved until your booking fee is confirmed. Contact us if you have questions.</p>`;
 
@@ -112,8 +117,8 @@ export function buildCommerceConfirmationEmail(
     ? `Your vehicle purchase details — ${params.listing.listingTitle}`
     : `Your vehicle booking quote — ${params.listing.listingTitle}`;
   const text = isBuy
-    ? `Thank you ${params.recipientName}. Your purchase reference ${params.referenceNumber} for ${params.listing.listingTitle} is attached. Vehicle price: ${priceLabel}. Transfer the full amount with reference ${params.referenceNumber} to the USD or Rwf account to proceed.`
-    : `Thank you ${params.recipientName}. Your booking quote ${params.referenceNumber} for ${params.listing.listingTitle} is attached. Vehicle price: ${priceLabel}. Booking fee: ${bookingFeeLabel}. Pay the booking fee with reference ${params.referenceNumber} to the USD or Rwf account to secure the vehicle.`;
+    ? `Thank you ${params.recipientName}. Your purchase reference ${params.referenceNumber} for ${params.listing.listingTitle} is attached. Vehicle price: ${priceLabel}. Transfer the full amount with reference ${params.referenceNumber} to the Rwf account to proceed.`
+    : `Thank you ${params.recipientName}. Your booking quote ${params.referenceNumber} for ${params.listing.listingTitle} is attached. Vehicle price: ${priceLabel}. Booking fee: ${bookingFeeLabel}. Pay the booking fee with reference ${params.referenceNumber} to the Rwf account to secure the vehicle.`;
 
   return { subject, html, text };
 }

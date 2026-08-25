@@ -1,5 +1,6 @@
 import { Listing, ListingPricing, ListingStatus, Prisma } from '@prisma/client';
 import { toAbsoluteUploadUrl } from '../../common/uploads/storage.paths';
+import { toDisplayRwf, usdtToRwfAmount } from '../../common/money/money-format.util';
 import type { PromotionPriceDisplay } from '../promotions/promotion-display.util';
 import {
   inventoryStagePublicLabel,
@@ -34,21 +35,42 @@ export function getPublicDisplayBadge(
   return inventoryStagePublicLabel(stage);
 }
 
-export function toPublicPricing(pricing: ListingPricing | null) {
+export function toPublicPricing(
+  pricing: ListingPricing | null,
+  frozenRate?: number | null,
+) {
   if (!pricing) return null;
 
   const {
     commissionUsd: _commissionUsd,
     sellerDesiredPayoutUsd: _sellerDesiredPayoutUsd,
+    commissionRwf: _commissionRwf,
+    sellerDesiredPayoutRwf: _sellerDesiredPayoutRwf,
     ...publicPricing
   } = pricing;
 
-  return publicPricing;
+  const finalPriceRwf =
+    pricing.finalPriceRwf ??
+    pricing.displayPriceRwf ??
+    toDisplayRwf({
+      currency: pricing.currency,
+      amountRwf: pricing.finalPriceRwf,
+      amountUsd: pricing.finalPriceUsd,
+      frozenRate,
+    });
+
+  return {
+    ...publicPricing,
+    currency: pricing.currency === 'RWF' ? 'RWF' : pricing.currency,
+    finalPriceRwf,
+    displayPriceRwf: pricing.displayPriceRwf ?? finalPriceRwf,
+  };
 }
 
 export function toPublicListing<T extends ListingWithRelations>(
   listing: T,
   promotionDisplay?: PromotionPriceDisplay | null,
+  frozenRate?: number | null,
 ) {
   const {
     adminNotes: _adminNotes,
@@ -61,6 +83,18 @@ export function toPublicListing<T extends ListingWithRelations>(
     verificationReport?: { riskNotes?: string | null } | null;
     isBooked?: boolean;
   };
+
+  const convertedPromotion =
+    promotionDisplay && frozenRate
+      ? {
+          ...promotionDisplay,
+          displayPriceRwf: usdtToRwfAmount(
+            promotionDisplay.displayPriceUsd,
+            frozenRate,
+          ),
+          savingRwf: usdtToRwfAmount(promotionDisplay.savingUsd, frozenRate),
+        }
+      : promotionDisplay;
 
   return {
     ...rest,
@@ -75,10 +109,10 @@ export function toPublicListing<T extends ListingWithRelations>(
       ...photo,
       url: toAbsoluteUploadUrl(photo.url),
     })),
-    listingPricing: toPublicPricing(listingPricing),
+    listingPricing: toPublicPricing(listingPricing, frozenRate),
     displayBadge: getPublicDisplayBadge(listing),
     inventoryStageLabel: getPublicDisplayBadge(listing),
-    ...(promotionDisplay ? { promotionDisplay } : {}),
+    ...(convertedPromotion ? { promotionDisplay: convertedPromotion } : {}),
   };
 }
 

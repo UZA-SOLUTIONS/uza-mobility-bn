@@ -53,10 +53,17 @@ export class CreateFleetInvoiceDto {
   @IsString()
   vehicleModel?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Legacy USD amount; converted with frozen rate if Rwf is omitted' })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  totalAmountUsd!: number;
+  totalAmountUsd?: number;
+
+  @ApiPropertyOptional({ description: 'Invoice total in Rwf' })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  totalAmountRwf?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

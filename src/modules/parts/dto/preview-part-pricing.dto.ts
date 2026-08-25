@@ -6,5 +6,5 @@ export class PreviewPartPricingDto {
   @ApiProperty({ example: 120 })
   @IsNumber()
   @Min(0)
-  desiredPayoutUsd!: number;
+  desiredPayoutRwf!: number;
 }

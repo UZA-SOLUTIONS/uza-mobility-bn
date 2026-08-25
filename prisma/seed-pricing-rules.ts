@@ -3,12 +3,12 @@ import type { PrismaClient, SellerType } from '@prisma/client';
 const DEFAULT_RULES: Array<{
   sellerType: SellerType;
   originCountry?: string;
-  shippingCostUsd?: number;
-  localChargesUsd?: number;
+  shippingCostRwf?: number;
+  localChargesRwf?: number;
   taxRatePercent?: number;
   insuranceRatePercent?: number;
-  storagePerDayUsd?: number;
-  clearingFeeUsd?: number;
+  storagePerDayRwf?: number;
+  clearingFeeRwf?: number;
   platformMarginPercent?: number;
   commissionRate?: number;
   deliveryDaysMin?: number;
@@ -21,12 +21,12 @@ const DEFAULT_RULES: Array<{
   },
   {
     sellerType: 'UZA_CHINA_SOURCING',
-    shippingCostUsd: 2500,
-    localChargesUsd: 800,
+    shippingCostRwf: 3_682_070,
+    localChargesRwf: 1_178_262,
     taxRatePercent: 18,
     insuranceRatePercent: 1.5,
-    storagePerDayUsd: 25,
-    clearingFeeUsd: 450,
+    storagePerDayRwf: 36_821,
+    clearingFeeRwf: 662_773,
     platformMarginPercent: 12,
     deliveryDaysMin: 45,
     deliveryDaysMax: 60,
@@ -39,8 +39,8 @@ const DEFAULT_RULES: Array<{
   },
   {
     sellerType: 'INTERNATIONAL_SELLER',
-    shippingCostUsd: 1800,
-    localChargesUsd: 600,
+    shippingCostRwf: 2_651_090,
+    localChargesRwf: 883_697,
     taxRatePercent: 15,
     platformMarginPercent: 10,
     deliveryDaysMin: 42,

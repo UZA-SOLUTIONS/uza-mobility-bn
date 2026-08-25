@@ -53,11 +53,11 @@ export class BookingsController {
 
   @Get('fee')
   @ApiOperation({
-    summary: 'Public booking fee (USD) for China-sourced vehicles',
+    summary: 'Public booking fee (Rwf) for China-sourced vehicles',
   })
   async getFee() {
-    const bookingFeeUsd = await this.bookingsService.getBookingFeeUsd();
-    return { bookingFeeUsd, currency: 'USD' as const };
+    const bookingFeeRwf = await this.bookingsService.getBookingFeeRwf();
+    return { bookingFeeRwf, currency: 'RWF' as const };
   }
 
   @Post('request')

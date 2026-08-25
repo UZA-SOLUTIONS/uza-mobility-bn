@@ -17,27 +17,27 @@ export class CalculatePriceDto {
   @IsString()
   pricingRuleId?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Base selling price in Rwf' })
   @IsOptional()
   @IsNumber()
   @Min(0)
-  basePriceUsd?: number;
+  basePriceRwf?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'FOB price in Rwf' })
   @IsOptional()
   @IsNumber()
   @Min(0)
-  fobPriceUsd?: number;
+  fobPriceRwf?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Desired seller payout in Rwf' })
   @IsOptional()
   @IsNumber()
   @Min(0)
-  sellerDesiredPayoutUsd?: number;
+  sellerDesiredPayoutRwf?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Optional discount in Rwf' })
   @IsOptional()
   @IsNumber()
   @Min(0)
-  discountUsd?: number;
+  discountRwf?: number;
 }

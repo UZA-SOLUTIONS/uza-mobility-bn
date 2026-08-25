@@ -1,33 +1,17 @@
-import {
-  Injectable,
-  Logger,
-  ServiceUnavailableException,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  DEFAULT_FROZEN_USD_TO_RWF,
   DEFAULT_RWF_MARKUP_PERCENT,
   PLATFORM_SETTING_KEYS,
   type ExchangeRateSnapshot,
 } from './platform-settings.constants';
 
-type ExchangeRateApiResponse = {
-  result?: string;
-  conversion_rates?: Record<string, number>;
-  time_last_update_utc?: string;
-  time_next_update_unix?: number;
-};
-
-const STALE_MS = 24 * 60 * 60 * 1000;
-
 @Injectable()
 export class ExchangeRateService {
   private readonly logger = new Logger(ExchangeRateService.name);
 
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async getMarkupPercent(): Promise<number> {
     const raw = await this.getSetting(
@@ -40,141 +24,67 @@ export class ExchangeRateService {
       : DEFAULT_RWF_MARKUP_PERCENT;
   }
 
-  async getSnapshot(options?: {
+  /**
+   * Frozen USDT→RWF rate from platform settings. Live API refresh is disabled.
+   */
+  async getSnapshot(_options?: {
     refreshIfStale?: boolean;
   }): Promise<ExchangeRateSnapshot> {
-    const refreshIfStale = options?.refreshIfStale !== false;
-    let apiRate = await this.getCachedNumber(PLATFORM_SETTING_KEYS.usdToRwfApi);
+    const apiRate = await this.getCachedNumber(PLATFORM_SETTING_KEYS.usdToRwfApi);
     let effective = await this.getCachedNumber(
       PLATFORM_SETTING_KEYS.usdToRwfEffective,
     );
-    let fetchedAt = await this.getCachedDate(
+    const fetchedAt = await this.getCachedDate(
       PLATFORM_SETTING_KEYS.rateFetchedAt,
     );
     const markupPercent = await this.getMarkupPercent();
 
-    const isStale =
-      !apiRate ||
-      !effective ||
-      !fetchedAt ||
-      Date.now() - fetchedAt.getTime() > STALE_MS;
-
-    if (refreshIfStale && isStale) {
-      try {
-        const refreshed = await this.refreshFromApi();
-        return refreshed;
-      } catch (error) {
-        this.logger.warn(
-          `Exchange rate refresh failed, using cache if available: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        if (!apiRate || !effective) {
-          throw error;
-        }
-      }
-    }
-
-    if (!apiRate || !effective) {
-      // Last resort defaults so admin/public UI can still render
-      apiRate = apiRate ?? 1472.8279;
-      effective = effective ?? apiRate * (1 + markupPercent / 100);
+    if (!effective) {
+      this.logger.warn(
+        'Frozen usdToRwfEffective is empty; using fallback rate for leftover USD listings',
+      );
+      effective = apiRate
+        ? apiRate * (1 + markupPercent / 100)
+        : DEFAULT_FROZEN_USD_TO_RWF;
     }
 
     return {
-      usdToRwfApi: apiRate,
+      usdToRwfApi: apiRate ?? effective,
       usdToRwfEffective: effective,
       markupPercent,
       rateFetchedAt: fetchedAt?.toISOString() ?? null,
       baseCurrency: 'USDT',
       quoteCurrency: 'RWF',
+      frozen: true,
     };
   }
 
-  async refreshFromApi(adminId?: string): Promise<ExchangeRateSnapshot> {
-    const apiKey = this.config.get<string>('EXCHANGE_RATE_API_KEY')?.trim();
-    if (!apiKey) {
-      throw new ServiceUnavailableException(
-        'EXCHANGE_RATE_API_KEY is not configured',
-      );
-    }
-
-    const url = `https://v6.exchangerate-api.com/v6/${apiKey}/latest/USD`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new ServiceUnavailableException(
-        `Exchange rate API returned ${response.status}`,
-      );
-    }
-
-    const body = (await response.json()) as ExchangeRateApiResponse;
-    if (body.result !== 'success' || body.conversion_rates?.RWF == null) {
-      throw new ServiceUnavailableException(
-        'Exchange rate API response missing RWF rate',
-      );
-    }
-
-    const apiRate = Number(body.conversion_rates.RWF);
-    if (!Number.isFinite(apiRate) || apiRate <= 0) {
-      throw new ServiceUnavailableException('Invalid RWF rate from API');
-    }
-
-    const markupPercent = await this.getMarkupPercent();
-    const effective = apiRate * (1 + markupPercent / 100);
-    const fetchedAt = new Date().toISOString();
-
-    await this.prisma.$transaction([
-      this.upsertSetting(
-        PLATFORM_SETTING_KEYS.usdToRwfApi,
-        String(apiRate),
-        adminId,
-      ),
-      this.upsertSetting(
-        PLATFORM_SETTING_KEYS.usdToRwfEffective,
-        String(effective),
-        adminId,
-      ),
-      this.upsertSetting(
-        PLATFORM_SETTING_KEYS.rateFetchedAt,
-        fetchedAt,
-        adminId,
-      ),
-    ]);
-
-    return {
-      usdToRwfApi: apiRate,
-      usdToRwfEffective: effective,
-      markupPercent,
-      rateFetchedAt: fetchedAt,
-      baseCurrency: 'USDT',
-      quoteCurrency: 'RWF',
-    };
+  async getFrozenRate(): Promise<number> {
+    const snapshot = await this.getSnapshot();
+    return snapshot.usdToRwfEffective;
   }
 
-  async recomputeEffective(adminId?: string): Promise<ExchangeRateSnapshot> {
-    const markupPercent = await this.getMarkupPercent();
-    const apiRate =
-      (await this.getCachedNumber(PLATFORM_SETTING_KEYS.usdToRwfApi)) ??
-      1472.8279;
-    const effective = apiRate * (1 + markupPercent / 100);
-    const fetchedAt =
-      (await this.getSetting(PLATFORM_SETTING_KEYS.rateFetchedAt, '')) ||
-      new Date().toISOString();
-
+  async setFrozenRate(
+    usdToRwfEffective: number,
+    adminId?: string,
+  ): Promise<ExchangeRateSnapshot> {
     await this.upsertSetting(
       PLATFORM_SETTING_KEYS.usdToRwfEffective,
-      String(effective),
+      String(usdToRwfEffective),
       adminId,
     );
-
-    return {
-      usdToRwfApi: apiRate,
-      usdToRwfEffective: effective,
-      markupPercent,
-      rateFetchedAt: fetchedAt,
-      baseCurrency: 'USDT',
-      quoteCurrency: 'RWF',
-    };
+    await this.upsertSetting(
+      PLATFORM_SETTING_KEYS.rateFetchedAt,
+      new Date().toISOString(),
+      adminId,
+    );
+    await this.prisma.$executeRaw`
+      UPDATE "listing_pricing"
+      SET "displayPriceRwf" = ROUND("finalPriceUsd" * ${usdToRwfEffective})
+      WHERE "currency" = 'USD'
+        AND "finalPriceUsd" IS NOT NULL
+    `;
+    return this.getSnapshot();
   }
 
   usdtToRwf(amountUsdt: number, effectiveRate: number): number {

@@ -12,7 +12,7 @@ import {
 } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { buildCommerceConfirmationEmail } from '../../common/mail/commerce-confirmation-email.util';
-import { formatDualMoney } from '../../common/money/money-format.util';
+import { formatMoneyRwf, rwfToUsdAmount } from '../../common/money/money-format.util';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { generateReferenceNumber } from '../../common/utils/reference-number.util';
@@ -69,6 +69,10 @@ export class BookingsService {
     return this.platformSettingsService.getBookingFeeUsd();
   }
 
+  getBookingFeeRwf(): Promise<number> {
+    return this.platformSettingsService.getBookingFeeRwf();
+  }
+
   async updateBookingFee(
     adminId: string,
     bookingId: string,
@@ -103,25 +107,38 @@ export class BookingsService {
       );
     }
 
-    const previousFee = booking.bookingFeeUsd;
-    const updated = await this.prisma.vehicleBooking.update({
-      where: { id: booking.id },
-      data: { bookingFeeUsd: dto.bookingFeeUsd },
-      include: bookingInclude,
-    });
-
     const rate = (
       await this.exchangeRateService.getSnapshot({ refreshIfStale: false })
     ).usdToRwfEffective;
+    const nextFeeRwf =
+      dto.bookingFeeRwf ??
+      (dto.bookingFeeUsd != null
+        ? Math.round(dto.bookingFeeUsd * rate)
+        : null);
+    if (nextFeeRwf == null || !(nextFeeRwf > 0)) {
+      throw new BadRequestException('Booking fee in Rwf is required');
+    }
+    const previousFeeRwf =
+      booking.bookingFeeRwf ?? Math.round(booking.bookingFeeUsd * rate);
+    const updated = await this.prisma.vehicleBooking.update({
+      where: { id: booking.id },
+      data: {
+        bookingFeeRwf: nextFeeRwf,
+        bookingFeeUsd: rwfToUsdAmount(nextFeeRwf, rate),
+        currency: 'RWF',
+      },
+      include: bookingInclude,
+    });
+
     await this.notificationsService.send({
       userId: booking.userId,
       type: NotificationType.SYSTEM_ALERT,
       title: 'Booking fee updated',
-      body: `The booking fee for ${booking.listing.listingTitle} was updated from ${formatDualMoney(previousFee, rate)} to ${formatDualMoney(dto.bookingFeeUsd, rate)}.`,
+      body: `The booking fee for ${booking.listing.listingTitle} was updated from ${formatMoneyRwf(previousFeeRwf)} to ${formatMoneyRwf(nextFeeRwf)}.`,
       metadata: {
         bookingId: booking.id,
-        previousFeeUsd: previousFee,
-        bookingFeeUsd: dto.bookingFeeUsd,
+        previousFeeRwf,
+        bookingFeeRwf: nextFeeRwf,
       },
     });
 
@@ -133,8 +150,8 @@ export class BookingsService {
       ipAddress: auditContext.ipAddress,
       userAgent: auditContext.userAgent,
       metadata: {
-        previousFeeUsd: previousFee,
-        bookingFeeUsd: dto.bookingFeeUsd,
+        previousFeeRwf,
+        bookingFeeRwf: nextFeeRwf,
       },
     });
 
@@ -202,7 +219,10 @@ export class BookingsService {
       generateReferenceNumber(this.prisma, 'UZM-BKG-PAY'),
     ]);
 
-    const bookingFeeUsd = await this.getBookingFeeUsd();
+    const bookingFeeRwf = await this.getBookingFeeRwf();
+    const exchangeRate = await this.exchangeRateService.getSnapshot({
+      refreshIfStale: false,
+    });
     const validUntil = this.addDays(new Date(), BOOKING_VALIDITY_DAYS);
 
     const booking = await this.prisma.vehicleBooking.create({
@@ -211,8 +231,12 @@ export class BookingsService {
         paymentReference,
         listingId: listing.id,
         userId,
-        bookingFeeUsd,
-        currency: 'USD',
+        bookingFeeUsd: rwfToUsdAmount(
+          bookingFeeRwf,
+          exchangeRate.usdToRwfEffective,
+        ),
+        bookingFeeRwf,
+        currency: 'RWF',
         status: VehicleBookingStatus.AWAITING_PAYMENT,
         validUntil,
         notes: dto.notes,
@@ -221,10 +245,8 @@ export class BookingsService {
     });
 
     const buyerName = `${user.firstName} ${user.lastName}`.trim();
-    const [company, exchangeRate] = await Promise.all([
-      this.platformSettingsService.getCompanyPaymentDetails(),
-      this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
-    ]);
+    const company =
+      await this.platformSettingsService.getCompanyPaymentDetails();
     const pdfBuffer = await this.quotePdfService.generateBuffer(
       paymentReference,
       InquiryIntent.BOOK,
@@ -250,7 +272,7 @@ export class BookingsService {
       referenceNumber: paymentReference,
       intent: InquiryIntent.BOOK,
       company,
-      bookingFeeUsd,
+      bookingFeeRwf,
       usdToRwfEffective: exchangeRate.usdToRwfEffective,
       accountActionUrl: `${frontendUrl}/my/bookings?highlight=${booking.id}`,
       accountActionLabel: 'View my booking',
@@ -261,7 +283,7 @@ export class BookingsService {
       userId,
       type: NotificationType.INVOICE_ISSUED,
       title: 'Vehicle booking created',
-      body: `Pay the booking fee of ${formatDualMoney(bookingFeeUsd, exchangeRate.usdToRwfEffective)} using reference ${paymentReference}. Your booking quote PDF is attached.`,
+      body: `Pay the booking fee of ${formatMoneyRwf(bookingFeeRwf)} using reference ${paymentReference}. Your booking quote PDF is attached.`,
       metadata: { bookingId: booking.id, listingId: listing.id },
       emailSubject: emailContent.subject,
       emailHtml: emailContent.html,
@@ -316,7 +338,7 @@ export class BookingsService {
       );
     }
 
-    const currency = dto.currency === 'RWF' ? 'RWF' : 'USD';
+    const currency = 'RWF';
     const exchangeRate = await this.exchangeRateService.getSnapshot({
       refreshIfStale: false,
     });

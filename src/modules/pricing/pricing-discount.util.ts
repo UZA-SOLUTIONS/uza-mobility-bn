@@ -3,23 +3,23 @@ import type { PricingRule } from '@prisma/client';
 export function applyRuleAndListingDiscounts(
   preDiscountTotal: number,
   rule: Pick<PricingRule, 'discountRatePercent'>,
-  listingDiscountUsd?: number,
+  listingDiscount?: number,
 ): {
-  ruleDiscountUsd: number;
+  ruleDiscount: number;
   ruleDiscountRatePercent?: number;
-  discountUsd: number;
-  finalPriceUsd: number;
+  discount: number;
+  finalPrice: number;
 } {
   const rate = rule.discountRatePercent ?? 0;
-  const ruleDiscountUsd = rate > 0 ? (preDiscountTotal * rate) / 100 : 0;
-  const afterRule = preDiscountTotal - ruleDiscountUsd;
-  const discountUsd = listingDiscountUsd ?? 0;
-  const finalPriceUsd = afterRule - discountUsd;
+  const ruleDiscount = rate > 0 ? (preDiscountTotal * rate) / 100 : 0;
+  const afterRule = preDiscountTotal - ruleDiscount;
+  const discount = listingDiscount ?? 0;
+  const finalPrice = afterRule - discount;
 
   return {
-    ruleDiscountUsd,
+    ruleDiscount,
     ...(rate > 0 ? { ruleDiscountRatePercent: rate } : {}),
-    discountUsd,
-    finalPriceUsd,
+    discount,
+    finalPrice,
   };
 }

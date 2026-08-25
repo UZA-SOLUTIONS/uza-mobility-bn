@@ -26,15 +26,15 @@ export class CreatePricingRuleDto {
   @IsString()
   destinationCountry?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Shipping cost in Rwf' })
   @IsOptional()
   @IsNumber()
-  shippingCostUsd?: number;
+  shippingCostRwf?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Local charges in Rwf' })
   @IsOptional()
   @IsNumber()
-  localChargesUsd?: number;
+  localChargesRwf?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -46,15 +46,15 @@ export class CreatePricingRuleDto {
   @IsNumber()
   insuranceRatePercent?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Storage per day in Rwf' })
   @IsOptional()
   @IsNumber()
-  storagePerDayUsd?: number;
+  storagePerDayRwf?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Clearing fee in Rwf' })
   @IsOptional()
   @IsNumber()
-  clearingFeeUsd?: number;
+  clearingFeeRwf?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

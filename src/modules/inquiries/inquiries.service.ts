@@ -321,9 +321,9 @@ export class InquiriesService {
     const frontendUrl = (
       this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
     ).replace(/\/$/, '');
-    const [company, bookingFeeUsd, exchangeRate] = await Promise.all([
+    const [company, bookingFeeRwf, exchangeRate] = await Promise.all([
       this.platformSettingsService.getCompanyPaymentDetails(),
-      this.platformSettingsService.getBookingFeeUsd(),
+      this.platformSettingsService.getBookingFeeRwf(),
       this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
     ]);
     const whatsappUrl = this.platformSettingsService.buildWhatsAppUrl(
@@ -354,7 +354,7 @@ export class InquiriesService {
       referenceNumber: quoteNumber,
       intent,
       company,
-      bookingFeeUsd,
+      bookingFeeRwf,
       usdToRwfEffective: exchangeRate.usdToRwfEffective,
       whatsappUrl,
       accountActionUrl: `${frontendUrl}/register?${registerParams.toString()}`,

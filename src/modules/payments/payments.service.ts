@@ -63,14 +63,11 @@ export class PaymentsService {
       );
     }
 
-    const currency = dto.currency === 'RWF' ? 'RWF' : 'USD';
+    const currency = 'RWF';
     const exchangeRate = await this.exchangeRateService.getSnapshot({
       refreshIfStale: false,
     });
-    const exchangeRateUsed =
-      currency === 'RWF'
-        ? exchangeRate.usdToRwfEffective
-        : (invoice.exchangeRateUsed ?? exchangeRate.usdToRwfEffective);
+    const exchangeRateUsed = exchangeRate.usdToRwfEffective;
 
     const payment = await this.prisma.$transaction(async (tx) => {
       const created = await tx.payment.create({

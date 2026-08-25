@@ -11,9 +11,9 @@ export class ExchangeRateController {
   @Public()
   @Get()
   @ApiOperation({
-    summary: 'Public USDT→RWF effective rate (API rate + markup)',
+    summary: 'Frozen USDT→RWF rate for leftover USD listing display',
   })
   getRate() {
-    return this.exchangeRateService.getSnapshot({ refreshIfStale: true });
+    return this.exchangeRateService.getSnapshot();
   }
 }

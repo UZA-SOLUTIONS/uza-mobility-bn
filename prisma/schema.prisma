@@ -550,12 +550,12 @@ model PricingRule {
   sellerType       SellerType
   originCountry    String?    // null = applies to all origins
   destinationCountry String?  // null = applies to all destinations
-  shippingCostUsd  Float?
-  localChargesUsd  Float?
+  shippingCostRwf  Float?
+  localChargesRwf  Float?
   taxRatePercent   Float?
   insuranceRatePercent Float?
-  storagePerDayUsd Float?
-  clearingFeeUsd   Float?
+  storagePerDayRwf Float?
+  clearingFeeRwf   Float?
   platformMarginPercent Float?
   commissionRate   Float?
   discountRatePercent Float?
@@ -589,6 +589,22 @@ model ListingPricing {
   ruleDiscountUsd       Float?
   discountUsd           Float?
   finalPriceUsd         Float
+  basePriceRwf          Float?
+  fobPriceRwf           Float?
+  sellerDesiredPayoutRwf Float?
+  shippingCostRwf       Float?
+  localChargesRwf       Float?
+  taxesEstimateRwf      Float?
+  insuranceRwf          Float?
+  storageRwf            Float?
+  clearingFeeRwf        Float?
+  landingCostRwf        Float?
+  marginRwf             Float?
+  commissionRwf         Float?
+  ruleDiscountRwf       Float?
+  discountRwf           Float?
+  finalPriceRwf         Float?
+  displayPriceRwf       Float?
   currency              String   @default("USD")
   priceValidUntil       DateTime?
   priceNotes            String?
@@ -692,6 +708,7 @@ model Invoice {
   ruleDiscountUsd   Float?
   discountUsd       Float?
   totalAmountUsd    Float
+  totalAmountRwf    Float?
   currency          String        @default("USD")
 
   // Payment details (USD + Rwf receiving accounts snapshotted at issue)
@@ -793,6 +810,7 @@ model VehicleBooking {
   listingId         String
   userId            String
   bookingFeeUsd     Float
+  bookingFeeRwf     Float?
   currency          String               @default("USD") // USD | RWF when proof submitted
   status            VehicleBookingStatus @default(AWAITING_PAYMENT)
   amountPaid        Float?

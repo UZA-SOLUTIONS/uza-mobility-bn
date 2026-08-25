@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 import { ExchangeRateService } from './exchange-rate.service';
 import {
+  DEFAULT_BOOKING_FEE_RWF,
   DEFAULT_BOOKING_FEE_USD,
   DEFAULT_PLATFORM_SETTINGS,
   PLATFORM_SETTING_KEYS,
@@ -41,6 +42,17 @@ export class PlatformSettingsService {
       : DEFAULT_BOOKING_FEE_USD;
   }
 
+  async getBookingFeeRwf(): Promise<number> {
+    const raw = await this.getString(PLATFORM_SETTING_KEYS.bookingFeeRwf);
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.round(parsed);
+    }
+    const usd = await this.getBookingFeeUsd();
+    const rate = await this.exchangeRateService.getFrozenRate();
+    return Math.round(usd * rate) || DEFAULT_BOOKING_FEE_RWF;
+  }
+
   async getCompanyPaymentDetails(): Promise<CompanyPaymentDetails> {
     const [
       legalName,
@@ -75,21 +87,24 @@ export class PlatformSettingsService {
   }
 
   async getSettings(): Promise<PlatformSettingsSnapshot> {
-    const bookingFeeUsd = await this.getBookingFeeUsd();
-    const company = await this.getCompanyPaymentDetails();
-    const exchangeRate = await this.exchangeRateService.getSnapshot({
-      refreshIfStale: false,
-    });
+    const [bookingFeeUsd, bookingFeeRwf, company, exchangeRate] =
+      await Promise.all([
+        this.getBookingFeeUsd(),
+        this.getBookingFeeRwf(),
+        this.getCompanyPaymentDetails(),
+        this.exchangeRateService.getSnapshot(),
+      ]);
 
     return {
       bookingFeeUsd,
+      bookingFeeRwf,
       companyLegalName: company.legalName,
       companyBankName: company.usd.bankName,
       companyAccountNumber: company.usd.accountNumber,
       companyBankNameRwf: company.rwf.bankName,
       companyAccountNumberRwf: company.rwf.accountNumber,
       companyWhatsappNumber: company.whatsappNumber,
-      currency: 'USDT',
+      currency: 'RWF',
       rwfMarkupPercent: exchangeRate.markupPercent,
       exchangeRate,
     };
@@ -106,6 +121,12 @@ export class PlatformSettingsService {
       updates.push({
         key: PLATFORM_SETTING_KEYS.bookingFeeUsd,
         value: String(dto.bookingFeeUsd),
+      });
+    }
+    if (dto.bookingFeeRwf != null) {
+      updates.push({
+        key: PLATFORM_SETTING_KEYS.bookingFeeRwf,
+        value: String(Math.round(dto.bookingFeeRwf)),
       });
     }
     if (dto.companyLegalName != null) {
@@ -144,29 +165,28 @@ export class PlatformSettingsService {
         value: dto.companyWhatsappNumber.replace(/\D/g, ''),
       });
     }
-    if (dto.rwfMarkupPercent != null) {
-      updates.push({
-        key: PLATFORM_SETTING_KEYS.rwfMarkupPercent,
-        value: String(dto.rwfMarkupPercent),
-      });
+
+    if (updates.length > 0) {
+      await this.prisma.$transaction(
+        updates.map(({ key, value }) =>
+          this.prisma.platformSetting.upsert({
+            where: { key },
+            create: { key, value, updatedBy: adminId },
+            update: { value, updatedBy: adminId },
+          }),
+        ),
+      );
     }
 
-    if (updates.length === 0) {
+    if (dto.usdToRwfEffective != null) {
+      await this.exchangeRateService.setFrozenRate(
+        dto.usdToRwfEffective,
+        adminId,
+      );
+    }
+
+    if (updates.length === 0 && dto.usdToRwfEffective == null) {
       return this.getSettings();
-    }
-
-    await this.prisma.$transaction(
-      updates.map(({ key, value }) =>
-        this.prisma.platformSetting.upsert({
-          where: { key },
-          create: { key, value, updatedBy: adminId },
-          update: { value, updatedBy: adminId },
-        }),
-      ),
-    );
-
-    if (dto.rwfMarkupPercent != null) {
-      await this.exchangeRateService.recomputeEffective(adminId);
     }
 
     await this.auditService.record({
@@ -176,9 +196,12 @@ export class PlatformSettingsService {
       entityId: 'platform-settings',
       ipAddress: auditContext.ipAddress,
       userAgent: auditContext.userAgent,
-      metadata: Object.fromEntries(
-        updates.map(({ key, value }) => [key, value]),
-      ),
+      metadata: {
+        ...Object.fromEntries(updates.map(({ key, value }) => [key, value])),
+        ...(dto.usdToRwfEffective != null
+          ? { usdToRwfEffective: String(dto.usdToRwfEffective) }
+          : {}),
+      },
     });
 
     return this.getSettings();

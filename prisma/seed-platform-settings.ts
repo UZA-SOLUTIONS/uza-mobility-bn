@@ -7,6 +7,7 @@ import {
 export async function seedPlatformSettings(prisma: PrismaClient) {
   const seedKeys = [
     'bookingFeeUsd',
+    'bookingFeeRwf',
     'companyLegalName',
     'companyBankName',
     'companyAccountNumber',
@@ -14,6 +15,7 @@ export async function seedPlatformSettings(prisma: PrismaClient) {
     'companyAccountNumberRwf',
     'companyWhatsappNumber',
     'rwfMarkupPercent',
+    'usdToRwfEffective',
   ] as const;
 
   await Promise.all(

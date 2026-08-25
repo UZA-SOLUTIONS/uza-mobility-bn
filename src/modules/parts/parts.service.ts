@@ -133,7 +133,7 @@ export class PartsService {
 
     return this.pricingService.calculatePrice(
       SellerType.LOCAL_SELLER,
-      { sellerDesiredPayoutUsd: dto.desiredPayoutUsd },
+      { sellerDesiredPayoutRwf: dto.desiredPayoutRwf },
       seller.country,
     );
   }

@@ -95,7 +95,7 @@ export class SearchService {
     if (filters.priceMin !== undefined || filters.priceMax !== undefined) {
       where.listingPricing = {
         is: {
-          finalPriceUsd: {
+          displayPriceRwf: {
             gte: filters.priceMin,
             lte: filters.priceMax,
           },
@@ -161,8 +161,8 @@ export class SearchService {
     | Prisma.ListingOrderByWithRelationInput[] {
     const map: Record<SortOption, Prisma.ListingOrderByWithRelationInput> = {
       [SortOption.NEWEST]: { createdAt: 'desc' },
-      [SortOption.PRICE_LOW]: { listingPricing: { finalPriceUsd: 'asc' } },
-      [SortOption.PRICE_HIGH]: { listingPricing: { finalPriceUsd: 'desc' } },
+      [SortOption.PRICE_LOW]: { listingPricing: { displayPriceRwf: 'asc' } },
+      [SortOption.PRICE_HIGH]: { listingPricing: { displayPriceRwf: 'desc' } },
       [SortOption.LOWEST_KM]: { mileageKm: 'asc' },
       [SortOption.BATTERY_HIGH]: {
         evSpecs: { batteryHealthPercent: 'desc' },

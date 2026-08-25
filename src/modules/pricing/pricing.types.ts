@@ -1,32 +1,34 @@
 import type { SellerType } from '@prisma/client';
 
 export interface PricingInput {
-  basePriceUsd?: number;
-  fobPriceUsd?: number;
-  sellerDesiredPayoutUsd?: number;
-  discountUsd?: number;
+  basePriceRwf?: number;
+  fobPriceRwf?: number;
+  sellerDesiredPayoutRwf?: number;
+  discountRwf?: number;
 }
 
 export interface PriceBreakdown {
-  basePriceUsd?: number;
-  fobPriceUsd?: number;
-  sellerDesiredPayoutUsd?: number;
-  shippingCostUsd?: number;
-  localChargesUsd?: number;
-  taxesEstimateUsd?: number;
-  insuranceUsd?: number;
-  storageUsd?: number;
-  clearingFeeUsd?: number;
-  landingCostUsd?: number;
-  marginUsd?: number;
+  basePriceRwf?: number;
+  fobPriceRwf?: number;
+  sellerDesiredPayoutRwf?: number;
+  shippingCostRwf?: number;
+  localChargesRwf?: number;
+  taxesEstimateRwf?: number;
+  insuranceRwf?: number;
+  storageRwf?: number;
+  clearingFeeRwf?: number;
+  landingCostRwf?: number;
+  marginRwf?: number;
   platformMarginRatePercent?: number;
-  commissionUsd?: number;
-  ruleDiscountUsd?: number;
+  commissionRwf?: number;
+  ruleDiscountRwf?: number;
   ruleDiscountRatePercent?: number;
-  discountUsd?: number;
+  discountRwf?: number;
+  finalPriceRwf: number;
+  displayPriceRwf: number;
   finalPriceUsd: number;
   deliveryDaysMin: number;
   deliveryDaysMax: number;
-  currency: string;
+  currency: 'RWF';
   sellerType: SellerType;
 }

@@ -2,8 +2,11 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 import { InquiryIntent, SellerType } from '@prisma/client';
-import { formatDualBankAccountsHtml } from '../../common/money/dual-bank-accounts.util';
-import { formatDualMoney } from '../../common/money/money-format.util';
+import { formatInvoiceBankAccountsHtml } from '../../common/money/dual-bank-accounts.util';
+import {
+  formatMoneyRwf,
+  toDisplayRwf,
+} from '../../common/money/money-format.util';
 import { HtmlToPdfService } from '../../common/pdf/html-to-pdf.service';
 import { toAbsoluteUploadUrl } from '../../common/uploads/storage.paths';
 import { ExchangeRateService } from '../platform-settings/exchange-rate.service';
@@ -98,9 +101,9 @@ export class QuotePdfService {
     },
   ): Promise<string> {
     const isBuy = intent === InquiryIntent.BUY;
-    const [company, bookingFeeUsd, exchangeRate] = await Promise.all([
+    const [company, bookingFeeRwf, exchangeRate] = await Promise.all([
       this.platformSettingsService.getCompanyPaymentDetails(),
-      this.platformSettingsService.getBookingFeeUsd(),
+      this.platformSettingsService.getBookingFeeRwf(),
       this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
     ]);
     const issuedAt = new Date();
@@ -108,16 +111,21 @@ export class QuotePdfService {
     validUntil.setDate(validUntil.getDate() + QUOTE_VALIDITY_DAYS);
 
     const pricing = listing.listingPricing;
-    const totalUsd = pricing?.finalPriceUsd ?? 0;
+    const rate = exchangeRate.usdToRwfEffective;
+    const totalRwf =
+      toDisplayRwf({
+        currency: pricing?.currency,
+        amountRwf: pricing?.finalPriceRwf ?? pricing?.displayPriceRwf,
+        amountUsd: pricing?.finalPriceUsd,
+        frozenRate: rate,
+      }) ?? 0;
     const delivery = this.deliverySummary(listing);
-    const priceRows = this.priceRows(listing, totalUsd, isBuy, bookingFeeUsd);
+    const priceRows = this.priceRows(listing, totalRwf, isBuy, bookingFeeRwf, rate);
     const ev = listing.evSpecs;
     const logoDataUri = this.readLogoDataUri();
     const vehicleImageDataUri = await this.resolveVehicleImageDataUri(listing);
-    const rate = exchangeRate.usdToRwfEffective;
 
-    const formatMoney = (value: number) =>
-      formatDualMoney(value, rate, { unit: 'USDT', empty: '—' });
+    const formatMoney = (value: number) => formatMoneyRwf(value, { empty: '—' });
 
     const specLine = [
       listing.color,
@@ -131,13 +139,13 @@ export class QuotePdfService {
       .join(' · ');
 
     const docTitle = isBuy ? 'VEHICLE PURCHASE QUOTE' : 'VEHICLE BOOKING QUOTE';
-    const amountDueNow = isBuy ? totalUsd : bookingFeeUsd;
+    const amountDueNow = isBuy ? totalRwf : bookingFeeRwf;
     const amountDueLabel = isBuy
       ? 'Amount due (full vehicle price)'
       : 'Amount due now (booking fee)';
     const paymentIntro = isBuy
-      ? `Transfer the <strong>full vehicle price (${formatMoney(totalUsd)})</strong> to proceed with your purchase.`
-      : `Pay the <strong>booking fee (${formatMoney(bookingFeeUsd)})</strong> to secure this vehicle. The remaining balance (${formatMoney(totalUsd)}) is due before delivery.`;
+      ? `Transfer the <strong>full vehicle price (${formatMoney(totalRwf)})</strong> to proceed with your purchase.`
+      : `Pay the <strong>booking fee (${formatMoney(bookingFeeRwf)})</strong> to secure this vehicle. The remaining balance (${formatMoney(totalRwf)}) is due before delivery.`;
 
     const vehicleImageHtml = vehicleImageDataUri
       ? `<div class="vehicle-image"><img src="${vehicleImageDataUri}" alt="${this.escapeHtml(listing.listingTitle)}" /></div>`
@@ -232,8 +240,8 @@ export class QuotePdfService {
         </td>
         <td>${listing.isNew ? 'New' : this.escapeHtml(listing.condition.replace(/_/g, ' '))}</td>
         <td>1</td>
-        <td>${formatMoney(totalUsd)}</td>
-        <td>${formatMoney(totalUsd)}</td>
+        <td>${formatMoney(totalRwf)}</td>
+        <td>${formatMoney(totalRwf)}</td>
       </tr>
     </tbody>
   </table>
@@ -255,19 +263,20 @@ export class QuotePdfService {
   <div class="payment">
     <strong>Payment instructions</strong><br />
     <p style="margin: 8px 0">${paymentIntro}</p>
-    ${formatDualBankAccountsHtml({
+    ${formatInvoiceBankAccountsHtml({
       legalName: company.legalName,
       usdBankName: company.usd.bankName,
       usdAccountNumber: company.usd.accountNumber,
       rwfBankName: company.rwf.bankName,
       rwfAccountNumber: company.rwf.accountNumber,
+      currency: 'RWF',
       escapeHtml: (value) => this.escapeHtml(value),
       asLineBreaks: true,
     })}
     <br />
     <strong>${amountDueLabel}: ${formatMoney(amountDueNow)}</strong><br />
     <strong>Payment reference: ${quoteNumber}</strong> (include in your transfer)<br />
-    Method: TT bank transfer only — pay to either the USD or Rwf account
+    Method: TT bank transfer only — pay to the Rwf account
   </div>
 
   <div class="box">
@@ -406,9 +415,10 @@ export class QuotePdfService {
 
   private priceRows(
     listing: InquiryListingContext,
-    totalUsd: number,
+    totalRwf: number,
     isBuy: boolean,
-    bookingFeeUsd: number,
+    bookingFeeRwf: number,
+    frozenRate: number,
   ): Array<{
     label: string;
     amount: number;
@@ -416,6 +426,16 @@ export class QuotePdfService {
     dueNow?: boolean;
   }> {
     const p = listing.listingPricing;
+    const asRwf = (
+      amountRwf: number | null | undefined,
+      amountUsd: number | null | undefined,
+    ) =>
+      toDisplayRwf({
+        currency: p?.currency,
+        amountRwf,
+        amountUsd,
+        frozenRate,
+      }) ?? 0;
     const rows: Array<{
       label: string;
       amount: number;
@@ -428,71 +448,88 @@ export class QuotePdfService {
       listing.sellerType === SellerType.INTERNATIONAL_SELLER
     ) {
       rows.push(
-        { label: 'Vehicle price (FOB)', amount: p?.fobPriceUsd ?? totalUsd },
-        { label: 'Estimated shipping', amount: p?.shippingCostUsd ?? 0 },
-        { label: 'Local charges', amount: p?.localChargesUsd ?? 0 },
+        {
+          label: 'Vehicle price (FOB)',
+          amount: asRwf(p?.fobPriceRwf, p?.fobPriceUsd) || totalRwf,
+        },
+        {
+          label: 'Estimated shipping',
+          amount: asRwf(p?.shippingCostRwf, p?.shippingCostUsd),
+        },
+        {
+          label: 'Local charges',
+          amount: asRwf(p?.localChargesRwf, p?.localChargesUsd),
+        },
         {
           label: 'Taxes and fees (estimate)',
-          amount: p?.taxesEstimateUsd ?? 0,
+          amount: asRwf(p?.taxesEstimateRwf, p?.taxesEstimateUsd),
         },
-        { label: 'Insurance (estimate)', amount: p?.insuranceUsd ?? 0 },
+        {
+          label: 'Insurance (estimate)',
+          amount: asRwf(p?.insuranceRwf, p?.insuranceUsd),
+        },
         {
           label: 'Clearing and declaration fee',
-          amount: p?.clearingFeeUsd ?? 0,
+          amount: asRwf(p?.clearingFeeRwf, p?.clearingFeeUsd),
         },
-        { label: 'Estimated landing cost', amount: p?.landingCostUsd ?? 0 },
-        { label: 'UZA service margin', amount: p?.marginUsd ?? 0 },
+        {
+          label: 'Estimated landing cost',
+          amount: asRwf(p?.landingCostRwf, p?.landingCostUsd),
+        },
+        {
+          label: 'UZA service margin',
+          amount: asRwf(p?.marginRwf, p?.marginUsd),
+        },
       );
-      const discount = p?.ruleDiscountUsd ?? 0;
-      const legacyListingDiscount = p?.discountUsd ?? 0;
+      const discount =
+        asRwf(p?.ruleDiscountRwf, p?.ruleDiscountUsd) ||
+        asRwf(p?.discountRwf, p?.discountUsd);
       const discountLabel = this.discountLabel(p?.priceNotes);
       if (discount > 0) {
         rows.push({ label: discountLabel, amount: -discount });
-      } else if (legacyListingDiscount > 0) {
-        rows.push({ label: discountLabel, amount: -legacyListingDiscount });
       }
       rows.push({
         label: 'TOTAL VEHICLE PRICE',
-        amount: totalUsd,
+        amount: totalRwf,
         total: true,
       });
     } else if (listing.sellerType === SellerType.UZA_RWANDA_STOCK) {
-      const discount = p?.ruleDiscountUsd ?? 0;
-      const legacyListingDiscount = p?.discountUsd ?? 0;
-      const totalDiscount = discount + legacyListingDiscount;
+      const discount =
+        asRwf(p?.ruleDiscountRwf, p?.ruleDiscountUsd) +
+        asRwf(p?.discountRwf, p?.discountUsd);
       rows.push({
         label: 'Vehicle price',
-        amount: totalUsd + totalDiscount,
+        amount: totalRwf + discount,
       });
-      if (totalDiscount > 0) {
+      if (discount > 0) {
         rows.push({
           label: this.discountLabel(p?.priceNotes),
-          amount: -totalDiscount,
+          amount: -discount,
         });
       }
       rows.push({
         label: 'TOTAL VEHICLE PRICE',
-        amount: totalUsd,
+        amount: totalRwf,
         total: true,
       });
     } else {
-      rows.push({ label: 'Vehicle price', amount: totalUsd, total: true });
+      rows.push({ label: 'Vehicle price', amount: totalRwf, total: true });
     }
 
     if (isBuy) {
       rows.push({
         label: 'AMOUNT DUE (FULL PURCHASE)',
-        amount: totalUsd,
+        amount: totalRwf,
         dueNow: true,
       });
     } else {
       rows.push({
         label: 'Booking fee (pay now to confirm)',
-        amount: bookingFeeUsd,
+        amount: bookingFeeRwf,
       });
       rows.push({
         label: 'AMOUNT DUE NOW (BOOKING FEE)',
-        amount: bookingFeeUsd,
+        amount: bookingFeeRwf,
         dueNow: true,
       });
     }

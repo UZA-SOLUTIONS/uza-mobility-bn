@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { UploadsModule } from '../../common/uploads/uploads.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { PromotionsModule } from '../promotions/promotions.module';
+import { PlatformSettingsModule } from '../platform-settings/platform-settings.module';
 import { SellersModule } from '../sellers/sellers.module';
 import { UsersModule } from '../../users/users.module';
 import { AdminListingsController } from './admin-listings.controller';
@@ -19,6 +20,7 @@ import { AuthModule } from '../auth/auth.module';
     SellersModule,
     PricingModule,
     PromotionsModule,
+    PlatformSettingsModule,
   ],
   controllers: [ListingsController, AdminListingsController],
   providers: [ListingsService, SearchService, VerificationService],

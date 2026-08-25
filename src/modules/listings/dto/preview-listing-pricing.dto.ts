@@ -13,23 +13,23 @@ export class PreviewListingPricingDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  basePriceUsd?: number;
+  basePriceRwf?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
   @Min(0)
-  fobPriceUsd?: number;
+  fobPriceRwf?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
   @Min(0)
-  sellerDesiredPayoutUsd?: number;
+  sellerDesiredPayoutRwf?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
   @Min(0)
-  discountUsd?: number;
+  discountRwf?: number;
 }

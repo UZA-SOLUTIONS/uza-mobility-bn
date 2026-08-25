@@ -1,5 +1,6 @@
 export const PLATFORM_SETTING_KEYS = {
   bookingFeeUsd: 'bookingFeeUsd',
+  bookingFeeRwf: 'bookingFeeRwf',
   companyLegalName: 'companyLegalName',
   companyBankName: 'companyBankName',
   companyAccountNumber: 'companyAccountNumber',
@@ -15,9 +16,12 @@ export const PLATFORM_SETTING_KEYS = {
 export type PlatformSettingKey =
   (typeof PLATFORM_SETTING_KEYS)[keyof typeof PLATFORM_SETTING_KEYS];
 
+export const DEFAULT_FROZEN_USD_TO_RWF = 1472.8279;
+
 /** Seeded defaults — admin can change these in the dashboard. */
 export const DEFAULT_PLATFORM_SETTINGS: Record<PlatformSettingKey, string> = {
   bookingFeeUsd: '500',
+  bookingFeeRwf: String(Math.round(500 * DEFAULT_FROZEN_USD_TO_RWF)),
   companyLegalName: 'UZA Solutions Ltd',
   companyBankName: 'Your Bank Name',
   companyAccountNumber: '0000000000',
@@ -26,12 +30,16 @@ export const DEFAULT_PLATFORM_SETTINGS: Record<PlatformSettingKey, string> = {
   companyWhatsappNumber: '250788000000',
   rwfMarkupPercent: '2',
   usdToRwfApi: '',
-  usdToRwfEffective: '',
+  usdToRwfEffective: String(DEFAULT_FROZEN_USD_TO_RWF),
   rateFetchedAt: '',
 };
 
 export const DEFAULT_BOOKING_FEE_USD = Number(
   DEFAULT_PLATFORM_SETTINGS.bookingFeeUsd,
+);
+
+export const DEFAULT_BOOKING_FEE_RWF = Number(
+  DEFAULT_PLATFORM_SETTINGS.bookingFeeRwf,
 );
 
 export const DEFAULT_RWF_MARKUP_PERCENT = Number(
@@ -45,17 +53,19 @@ export type ExchangeRateSnapshot = {
   rateFetchedAt: string | null;
   baseCurrency: 'USDT';
   quoteCurrency: 'RWF';
+  frozen: true;
 };
 
 export type PlatformSettingsSnapshot = {
   bookingFeeUsd: number;
+  bookingFeeRwf: number;
   companyLegalName: string;
   companyBankName: string;
   companyAccountNumber: string;
   companyBankNameRwf: string;
   companyAccountNumberRwf: string;
   companyWhatsappNumber: string;
-  currency: 'USDT';
+  currency: 'RWF';
   rwfMarkupPercent: number;
   exchangeRate: ExchangeRateSnapshot;
 };

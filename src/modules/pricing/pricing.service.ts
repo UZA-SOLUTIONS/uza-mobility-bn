@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { ListingPricing, PricingRule, SellerType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { rwfToUsdAmount } from '../../common/money/money-format.util';
+import { ExchangeRateService } from '../platform-settings/exchange-rate.service';
 import {
   breakdownToListingPricingCreate,
   parsePricingRuleIdFromPriceNotes,
@@ -16,7 +18,10 @@ import { applyRuleAndListingDiscounts } from './pricing-discount.util';
 export class PricingService {
   private readonly logger = new Logger(PricingService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly exchangeRateService: ExchangeRateService,
+  ) {}
 
   async findAllRules() {
     return this.prisma.pricingRule.findMany({
@@ -55,10 +60,10 @@ export class PricingService {
     return this.calculatePrice(
       dto.sellerType,
       {
-        basePriceUsd: dto.basePriceUsd,
-        fobPriceUsd: dto.fobPriceUsd,
-        sellerDesiredPayoutUsd: dto.sellerDesiredPayoutUsd,
-        discountUsd: dto.discountUsd,
+        basePriceRwf: dto.basePriceRwf,
+        fobPriceRwf: dto.fobPriceRwf,
+        sellerDesiredPayoutRwf: dto.sellerDesiredPayoutRwf,
+        discountRwf: dto.discountRwf,
       },
       dto.originCountry,
       dto.pricingRuleId,
@@ -70,148 +75,183 @@ export class PricingService {
     input: PricingInput,
     originCountry?: string,
     pricingRuleId?: string,
+    frozenRate?: number,
   ): Promise<PriceBreakdown> {
+    const rate =
+      frozenRate ?? (await this.exchangeRateService.getFrozenRate());
     const rule = pricingRuleId
       ? await this.getRuleOrThrow(pricingRuleId)
       : await this.getActiveRule(sellerType, originCountry);
 
     switch (sellerType) {
       case 'UZA_RWANDA_STOCK':
-        return this.calcRwandaStock(input, rule);
+        return this.calcRwandaStock(input, rule, rate);
       case 'UZA_CHINA_SOURCING':
-        return this.calcChinaSourcing(input, rule);
+        return this.calcChinaSourcing(input, rule, rate);
       case 'LOCAL_SELLER':
-        return this.calcLocalSeller(input, rule);
+        return this.calcLocalSeller(input, rule, rate);
       case 'INTERNATIONAL_SELLER':
-        return this.calcInternational(input, rule);
+        return this.calcInternational(input, rule, rate);
       default:
         throw new NotFoundException(`Unsupported seller type: ${sellerType}`);
     }
   }
 
+  private finalize(
+    sellerType: SellerType,
+    fields: Omit<
+      PriceBreakdown,
+      'currency' | 'sellerType' | 'finalPriceUsd' | 'displayPriceRwf'
+    >,
+    rate: number,
+  ): PriceBreakdown {
+    const finalPriceRwf = Math.round(fields.finalPriceRwf);
+    return {
+      ...fields,
+      sellerType,
+      finalPriceRwf,
+      displayPriceRwf: finalPriceRwf,
+      finalPriceUsd: rwfToUsdAmount(finalPriceRwf, rate),
+      currency: 'RWF',
+    };
+  }
+
   private calcRwandaStock(
     input: PricingInput,
     rule: PricingRule,
+    rate: number,
   ): PriceBreakdown {
-    const base = input.basePriceUsd ?? 0;
+    const base = input.basePriceRwf ?? 0;
     const discounts = applyRuleAndListingDiscounts(
       base,
       rule,
-      input.discountUsd,
+      input.discountRwf,
     );
-    return {
-      sellerType: 'UZA_RWANDA_STOCK',
-      basePriceUsd: base,
-      ruleDiscountUsd: discounts.ruleDiscountUsd,
-      ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
-      discountUsd: discounts.discountUsd,
-      finalPriceUsd: discounts.finalPriceUsd,
-      deliveryDaysMin: rule.deliveryDaysMin ?? 1,
-      deliveryDaysMax: rule.deliveryDaysMax ?? 2,
-      currency: 'USD',
-    };
+    return this.finalize(
+      'UZA_RWANDA_STOCK',
+      {
+        basePriceRwf: base,
+        ruleDiscountRwf: discounts.ruleDiscount,
+        ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
+        discountRwf: discounts.discount,
+        finalPriceRwf: discounts.finalPrice,
+        deliveryDaysMin: rule.deliveryDaysMin ?? 1,
+        deliveryDaysMax: rule.deliveryDaysMax ?? 2,
+      },
+      rate,
+    );
   }
 
   private calcChinaSourcing(
     input: PricingInput,
     rule: PricingRule,
+    rate: number,
   ): PriceBreakdown {
-    const fob = input.fobPriceUsd ?? 0;
-    const ship = rule.shippingCostUsd ?? 0;
-    const local = rule.localChargesUsd ?? 0;
+    const fob = input.fobPriceRwf ?? 0;
+    const ship = rule.shippingCostRwf ?? 0;
+    const local = rule.localChargesRwf ?? 0;
     const taxes = (fob + ship) * ((rule.taxRatePercent ?? 0) / 100);
     const insure = (fob + ship) * ((rule.insuranceRatePercent ?? 0) / 100);
-    const storage = rule.storagePerDayUsd ?? 0;
-    const clearing = rule.clearingFeeUsd ?? 0;
+    const storage = rule.storagePerDayRwf ?? 0;
+    const clearing = rule.clearingFeeRwf ?? 0;
     const landing = fob + ship + local + taxes + insure + storage + clearing;
     const margin = landing * ((rule.platformMarginPercent ?? 0) / 100);
     const preDiscount = landing + margin;
     const discounts = applyRuleAndListingDiscounts(
       preDiscount,
       rule,
-      input.discountUsd,
+      input.discountRwf,
     );
-    return {
-      sellerType: 'UZA_CHINA_SOURCING',
-      fobPriceUsd: fob,
-      shippingCostUsd: ship,
-      localChargesUsd: local,
-      taxesEstimateUsd: taxes,
-      insuranceUsd: insure,
-      storageUsd: storage,
-      clearingFeeUsd: clearing,
-      landingCostUsd: landing,
-      marginUsd: margin,
-      platformMarginRatePercent: rule.platformMarginPercent ?? undefined,
-      ruleDiscountUsd: discounts.ruleDiscountUsd,
-      ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
-      discountUsd: discounts.discountUsd,
-      finalPriceUsd: discounts.finalPriceUsd,
-      deliveryDaysMin: rule.deliveryDaysMin ?? 42,
-      deliveryDaysMax: rule.deliveryDaysMax ?? 56,
-      currency: 'USD',
-    };
+    return this.finalize(
+      'UZA_CHINA_SOURCING',
+      {
+        fobPriceRwf: fob,
+        shippingCostRwf: ship,
+        localChargesRwf: local,
+        taxesEstimateRwf: taxes,
+        insuranceRwf: insure,
+        storageRwf: storage,
+        clearingFeeRwf: clearing,
+        landingCostRwf: landing,
+        marginRwf: margin,
+        platformMarginRatePercent: rule.platformMarginPercent ?? undefined,
+        ruleDiscountRwf: discounts.ruleDiscount,
+        ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
+        discountRwf: discounts.discount,
+        finalPriceRwf: discounts.finalPrice,
+        deliveryDaysMin: rule.deliveryDaysMin ?? 42,
+        deliveryDaysMax: rule.deliveryDaysMax ?? 56,
+      },
+      rate,
+    );
   }
 
   private calcLocalSeller(
     input: PricingInput,
     rule: PricingRule,
+    rate: number,
   ): PriceBreakdown {
-    const payout = input.sellerDesiredPayoutUsd ?? 0;
-    const rate = rule.commissionRate ?? 0.05;
-    const finalPrice = payout / (1 - rate);
+    const payout = input.sellerDesiredPayoutRwf ?? 0;
+    const commissionRate = rule.commissionRate ?? 0.05;
+    const finalPrice = payout / (1 - commissionRate);
     const commission = finalPrice - payout;
     const discounts = applyRuleAndListingDiscounts(
       finalPrice,
       rule,
-      input.discountUsd,
+      input.discountRwf,
     );
-    return {
-      sellerType: 'LOCAL_SELLER',
-      sellerDesiredPayoutUsd: payout,
-      commissionUsd: commission,
-      ruleDiscountUsd: discounts.ruleDiscountUsd,
-      ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
-      discountUsd: discounts.discountUsd,
-      finalPriceUsd: discounts.finalPriceUsd,
-      deliveryDaysMin: rule.deliveryDaysMin ?? 2,
-      deliveryDaysMax: rule.deliveryDaysMax ?? 5,
-      currency: 'USD',
-    };
+    return this.finalize(
+      'LOCAL_SELLER',
+      {
+        sellerDesiredPayoutRwf: payout,
+        commissionRwf: commission,
+        ruleDiscountRwf: discounts.ruleDiscount,
+        ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
+        discountRwf: discounts.discount,
+        finalPriceRwf: discounts.finalPrice,
+        deliveryDaysMin: rule.deliveryDaysMin ?? 2,
+        deliveryDaysMax: rule.deliveryDaysMax ?? 5,
+      },
+      rate,
+    );
   }
 
   private calcInternational(
     input: PricingInput,
     rule: PricingRule,
+    rate: number,
   ): PriceBreakdown {
-    const fob = input.fobPriceUsd ?? 0;
-    const route = rule.shippingCostUsd ?? 0;
-    const local = rule.localChargesUsd ?? 0;
+    const fob = input.fobPriceRwf ?? 0;
+    const route = rule.shippingCostRwf ?? 0;
+    const local = rule.localChargesRwf ?? 0;
     const taxes = (fob + route) * ((rule.taxRatePercent ?? 0) / 100);
     const margin =
-      (fob + route + local + taxes) * ((rule.platformMarginPercent ?? 0) / 100);
+      (fob + route + local + taxes) *
+      ((rule.platformMarginPercent ?? 0) / 100);
     const preDiscount = fob + route + local + taxes + margin;
     const discounts = applyRuleAndListingDiscounts(
       preDiscount,
       rule,
-      input.discountUsd,
+      input.discountRwf,
     );
-    return {
-      sellerType: 'INTERNATIONAL_SELLER',
-      fobPriceUsd: fob,
-      shippingCostUsd: route,
-      localChargesUsd: local,
-      taxesEstimateUsd: taxes,
-      marginUsd: margin,
-      platformMarginRatePercent: rule.platformMarginPercent ?? undefined,
-      ruleDiscountUsd: discounts.ruleDiscountUsd,
-      ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
-      discountUsd: discounts.discountUsd,
-      finalPriceUsd: discounts.finalPriceUsd,
-      deliveryDaysMin: rule.deliveryDaysMin ?? 42,
-      deliveryDaysMax: rule.deliveryDaysMax ?? 70,
-      currency: 'USD',
-    };
+    return this.finalize(
+      'INTERNATIONAL_SELLER',
+      {
+        fobPriceRwf: fob,
+        shippingCostRwf: route,
+        localChargesRwf: local,
+        taxesEstimateRwf: taxes,
+        marginRwf: margin,
+        platformMarginRatePercent: rule.platformMarginPercent ?? undefined,
+        ruleDiscountRwf: discounts.ruleDiscount,
+        ruleDiscountRatePercent: discounts.ruleDiscountRatePercent,
+        discountRwf: discounts.discount,
+        finalPriceRwf: discounts.finalPrice,
+        deliveryDaysMin: rule.deliveryDaysMin ?? 42,
+        deliveryDaysMax: rule.deliveryDaysMax ?? 70,
+      },
+      rate,
+    );
   }
 
   private async getActiveRule(
@@ -257,7 +297,6 @@ export class PricingService {
     return rule;
   }
 
-  /** Recompute stored listing prices that use this rule (explicit or default). */
   private async syncListingsForPricingRule(
     pricingRuleId: string,
   ): Promise<number> {
@@ -277,6 +316,7 @@ export class PricingService {
     for (const listing of listings) {
       const pricing = listing.listingPricing;
       if (!pricing) continue;
+      if (pricing.currency !== 'RWF') continue;
 
       const linkedRuleId = parsePricingRuleIdFromPriceNotes(pricing.priceNotes);
       let applies = linkedRuleId === pricingRuleId;
@@ -324,10 +364,10 @@ export class PricingService {
     const breakdown = await this.calculatePrice(
       listing.sellerType,
       toPricingInput({
-        basePriceUsd: pricing.basePriceUsd ?? undefined,
-        fobPriceUsd: pricing.fobPriceUsd ?? undefined,
-        sellerDesiredPayoutUsd: pricing.sellerDesiredPayoutUsd ?? undefined,
-        discountUsd: pricing.discountUsd ?? undefined,
+        basePriceRwf: pricing.basePriceRwf ?? undefined,
+        fobPriceRwf: pricing.fobPriceRwf ?? undefined,
+        sellerDesiredPayoutRwf: pricing.sellerDesiredPayoutRwf ?? undefined,
+        discountRwf: pricing.discountRwf ?? undefined,
       }),
       listing.country ?? undefined,
       pricingRuleId,
@@ -336,6 +376,7 @@ export class PricingService {
     const pricingData = breakdownToListingPricingCreate(
       breakdown,
       pricingRuleId,
+      pricing,
     );
 
     await this.prisma.$transaction([

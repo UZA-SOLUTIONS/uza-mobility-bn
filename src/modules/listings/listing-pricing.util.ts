@@ -1,24 +1,45 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma, SellerType } from '@prisma/client';
+import { rwfToUsdAmount, usdtToRwfAmount } from '../../common/money/money-format.util';
 import type { PriceBreakdown, PricingInput } from '../pricing/pricing.types';
 import type { CreateListingPricingDto } from './dto/create-listing-pricing.dto';
 
 export type ListingPricingInputDto = Pick<
   CreateListingPricingDto,
-  | 'basePriceUsd'
-  | 'fobPriceUsd'
-  | 'sellerDesiredPayoutUsd'
-  | 'discountUsd'
+  | 'basePriceRwf'
+  | 'fobPriceRwf'
+  | 'sellerDesiredPayoutRwf'
+  | 'discountRwf'
   | 'pricingRuleId'
 >;
 
+export type ExistingListingPricing = {
+  currency?: string | null;
+  basePriceUsd?: number | null;
+  fobPriceUsd?: number | null;
+  sellerDesiredPayoutUsd?: number | null;
+  discountUsd?: number | null;
+  basePriceRwf?: number | null;
+  fobPriceRwf?: number | null;
+  sellerDesiredPayoutRwf?: number | null;
+  discountRwf?: number | null;
+};
+
 export function toPricingInput(dto: ListingPricingInputDto): PricingInput {
   return {
-    basePriceUsd: dto.basePriceUsd,
-    fobPriceUsd: dto.fobPriceUsd,
-    sellerDesiredPayoutUsd: dto.sellerDesiredPayoutUsd,
-    discountUsd: dto.discountUsd,
+    basePriceRwf: dto.basePriceRwf,
+    fobPriceRwf: dto.fobPriceRwf,
+    sellerDesiredPayoutRwf: dto.sellerDesiredPayoutRwf,
+    discountRwf: dto.discountRwf,
   };
+}
+
+function usdToRwf(
+  amount: number | null | undefined,
+  frozenRate: number,
+): number | undefined {
+  if (amount == null) return undefined;
+  return usdtToRwfAmount(amount, frozenRate);
 }
 
 export function assertListingPricingInput(
@@ -27,24 +48,24 @@ export function assertListingPricingInput(
 ): void {
   switch (sellerType) {
     case SellerType.UZA_RWANDA_STOCK:
-      if (pricing.basePriceUsd == null) {
+      if (pricing.basePriceRwf == null) {
         throw new BadRequestException(
-          'basePriceUsd is required for UZA Rwanda stock listings',
+          'basePriceRwf is required for UZA Rwanda stock listings',
         );
       }
       break;
     case SellerType.UZA_CHINA_SOURCING:
     case SellerType.INTERNATIONAL_SELLER:
-      if (pricing.fobPriceUsd == null) {
+      if (pricing.fobPriceRwf == null) {
         throw new BadRequestException(
-          `fobPriceUsd is required for ${sellerType} listings`,
+          `fobPriceRwf is required for ${sellerType} listings`,
         );
       }
       break;
     case SellerType.LOCAL_SELLER:
-      if (pricing.sellerDesiredPayoutUsd == null) {
+      if (pricing.sellerDesiredPayoutRwf == null) {
         throw new BadRequestException(
-          'sellerDesiredPayoutUsd is required for local seller listings',
+          'sellerDesiredPayoutRwf is required for local seller listings',
         );
       }
       break;
@@ -56,21 +77,30 @@ export function assertListingPricingInput(
 export function mergeListingPricingInput(
   sellerType: SellerType,
   partial: ListingPricingInputDto,
-  existing?: {
-    basePriceUsd: number | null;
-    fobPriceUsd: number | null;
-    sellerDesiredPayoutUsd: number | null;
-    discountUsd: number | null;
-  } | null,
+  existing: ExistingListingPricing | null | undefined,
+  frozenRate: number,
 ): ListingPricingInputDto {
+  const fromUsd = existing?.currency !== 'RWF';
   const merged: ListingPricingInputDto = {
-    basePriceUsd: partial.basePriceUsd ?? existing?.basePriceUsd ?? undefined,
-    fobPriceUsd: partial.fobPriceUsd ?? existing?.fobPriceUsd ?? undefined,
-    sellerDesiredPayoutUsd:
-      partial.sellerDesiredPayoutUsd ??
-      existing?.sellerDesiredPayoutUsd ??
-      undefined,
-    discountUsd: partial.discountUsd ?? existing?.discountUsd ?? undefined,
+    basePriceRwf:
+      partial.basePriceRwf ??
+      existing?.basePriceRwf ??
+      (fromUsd ? usdToRwf(existing?.basePriceUsd, frozenRate) : undefined),
+    fobPriceRwf:
+      partial.fobPriceRwf ??
+      existing?.fobPriceRwf ??
+      (fromUsd ? usdToRwf(existing?.fobPriceUsd, frozenRate) : undefined),
+    sellerDesiredPayoutRwf:
+      partial.sellerDesiredPayoutRwf ??
+      existing?.sellerDesiredPayoutRwf ??
+      (fromUsd
+        ? usdToRwf(existing?.sellerDesiredPayoutUsd, frozenRate)
+        : undefined),
+    discountRwf:
+      partial.discountRwf ??
+      existing?.discountRwf ??
+      (fromUsd ? usdToRwf(existing?.discountUsd, frozenRate) : undefined),
+    pricingRuleId: partial.pricingRuleId,
   };
 
   assertListingPricingInput(sellerType, merged);
@@ -80,24 +110,31 @@ export function mergeListingPricingInput(
 export function breakdownToListingPricingCreate(
   breakdown: PriceBreakdown,
   pricingRuleId?: string,
+  existingUsd?: ExistingListingPricing | null,
 ): Prisma.ListingPricingCreateWithoutListingInput {
   return {
-    basePriceUsd: breakdown.basePriceUsd,
-    fobPriceUsd: breakdown.fobPriceUsd,
-    sellerDesiredPayoutUsd: breakdown.sellerDesiredPayoutUsd,
-    shippingCostUsd: breakdown.shippingCostUsd,
-    localChargesUsd: breakdown.localChargesUsd,
-    taxesEstimateUsd: breakdown.taxesEstimateUsd,
-    insuranceUsd: breakdown.insuranceUsd,
-    storageUsd: breakdown.storageUsd,
-    clearingFeeUsd: breakdown.clearingFeeUsd,
-    landingCostUsd: breakdown.landingCostUsd,
-    marginUsd: breakdown.marginUsd,
-    commissionUsd: breakdown.commissionUsd,
-    ruleDiscountUsd: breakdown.ruleDiscountUsd,
-    discountUsd: breakdown.discountUsd,
+    basePriceUsd: existingUsd?.basePriceUsd ?? undefined,
+    fobPriceUsd: existingUsd?.fobPriceUsd ?? undefined,
+    sellerDesiredPayoutUsd: existingUsd?.sellerDesiredPayoutUsd ?? undefined,
+    discountUsd: existingUsd?.discountUsd ?? undefined,
     finalPriceUsd: breakdown.finalPriceUsd,
-    currency: breakdown.currency,
+    basePriceRwf: breakdown.basePriceRwf,
+    fobPriceRwf: breakdown.fobPriceRwf,
+    sellerDesiredPayoutRwf: breakdown.sellerDesiredPayoutRwf,
+    shippingCostRwf: breakdown.shippingCostRwf,
+    localChargesRwf: breakdown.localChargesRwf,
+    taxesEstimateRwf: breakdown.taxesEstimateRwf,
+    insuranceRwf: breakdown.insuranceRwf,
+    storageRwf: breakdown.storageRwf,
+    clearingFeeRwf: breakdown.clearingFeeRwf,
+    landingCostRwf: breakdown.landingCostRwf,
+    marginRwf: breakdown.marginRwf,
+    commissionRwf: breakdown.commissionRwf,
+    ruleDiscountRwf: breakdown.ruleDiscountRwf,
+    discountRwf: breakdown.discountRwf,
+    finalPriceRwf: breakdown.finalPriceRwf,
+    displayPriceRwf: breakdown.displayPriceRwf,
+    currency: 'RWF',
     priceNotes: pricingRuleId
       ? JSON.stringify({
           pricingRuleId,
@@ -146,4 +183,11 @@ export function parseDiscountRatePercentFromPriceNotes(
   } catch {
     return undefined;
   }
+}
+
+export function derivedUsdFromRwf(
+  amountRwf: number,
+  frozenRate: number,
+): number {
+  return rwfToUsdAmount(amountRwf, frozenRate);
 }

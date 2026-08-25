@@ -3,8 +3,12 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 import type { Invoice } from '@prisma/client';
-import { formatDualBankAccountsHtml } from '../../common/money/dual-bank-accounts.util';
-import { formatDualMoney } from '../../common/money/money-format.util';
+import { formatInvoiceBankAccountsHtml } from '../../common/money/dual-bank-accounts.util';
+import {
+  formatDualMoney,
+  formatMoneyRwf,
+  toDisplayRwf,
+} from '../../common/money/money-format.util';
 import { HtmlToPdfService } from '../../common/pdf/html-to-pdf.service';
 import { ExchangeRateService } from '../platform-settings/exchange-rate.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
@@ -75,11 +79,24 @@ export class InvoicePdfService {
     ]);
     const companyName = invoice.beneficiaryName ?? company.legalName;
     const usdToRwf = invoice.exchangeRateUsed ?? exchangeRate.usdToRwfEffective;
-    const amountDue = formatDualMoney(invoice.totalAmountUsd, usdToRwf, {
-      unit: 'USDT',
-      empty: '—',
-    });
-    const bankRows = formatDualBankAccountsHtml({
+    const amountDue =
+      invoice.currency === 'USD'
+        ? formatDualMoney(invoice.totalAmountUsd, usdToRwf, {
+            unit: 'USD',
+            empty: '—',
+          })
+        : formatMoneyRwf(
+            invoice.totalAmountRwf ??
+              toDisplayRwf({
+                currency: invoice.currency,
+                amountRwf: invoice.totalAmountRwf,
+                amountUsd: invoice.totalAmountUsd,
+                frozenRate: usdToRwf,
+              }),
+            { empty: '—' },
+          );
+    const bankRows = formatInvoiceBankAccountsHtml({
+      currency: invoice.currency,
       legalName: companyName,
       usdBankName: invoice.bankName ?? company.usd.bankName,
       usdAccountNumber: invoice.accountNumber ?? company.usd.accountNumber,

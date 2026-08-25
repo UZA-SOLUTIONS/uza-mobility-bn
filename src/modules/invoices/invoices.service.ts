@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { buildCommerceConfirmationEmail } from '../../common/mail/commerce-confirmation-email.util';
+import { rwfToUsdAmount } from '../../common/money/money-format.util';
 import { generateReferenceNumber } from '../../common/utils/reference-number.util';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
@@ -120,8 +121,6 @@ export class InvoicesService {
       this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
     ]);
 
-    const totalAmountUsd = listing.listingPricing.finalPriceUsd;
-
     const invoice = await this.prisma.$transaction(async (tx) => {
       const inv = await tx.invoice.create({
         data: {
@@ -144,10 +143,11 @@ export class InvoicesService {
           vehicleLocation: listing.vehicleLocation,
           sellerType: listing.sellerType,
           verificationLevel: listing.verificationLevel,
-          ...snapshotPricingFields(listing.listingPricing),
+          ...snapshotPricingFields(
+            listing.listingPricing,
+            exchangeRate.usdToRwfEffective,
+          ),
           beneficiaryName: company.legalName,
-          bankName: company.usd.bankName,
-          accountNumber: company.usd.accountNumber,
           rwfBankName: company.rwf.bankName,
           rwfAccountNumber: company.rwf.accountNumber,
           exchangeRateUsed: exchangeRate.usdToRwfEffective,
@@ -167,7 +167,7 @@ export class InvoicesService {
     void this.invoicePdfService.generate(invoice.id).catch(() => undefined);
 
     const buyerName = `${user.firstName} ${user.lastName}`.trim();
-    const bookingFeeUsd = await this.platformSettingsService.getBookingFeeUsd();
+    const bookingFeeRwf = await this.platformSettingsService.getBookingFeeRwf();
     const pdfBuffer = await this.quotePdfService.generateBuffer(
       paymentReference,
       InquiryIntent.BUY,
@@ -193,7 +193,7 @@ export class InvoicesService {
       referenceNumber: paymentReference,
       intent: InquiryIntent.BUY,
       company,
-      bookingFeeUsd,
+      bookingFeeRwf,
       usdToRwfEffective: exchangeRate.usdToRwfEffective,
       accountActionUrl: `${frontendUrl}/my/invoices?highlight=${invoice.id}`,
       accountActionLabel: 'View my invoice',
@@ -363,6 +363,16 @@ export class InvoicesService {
       this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
     ]);
 
+    const frozenRate = exchangeRate.usdToRwfEffective;
+    const totalAmountRwf =
+      dto.totalAmountRwf ??
+      Math.round((dto.totalAmountUsd ?? 0) * frozenRate);
+    if (!(totalAmountRwf > 0)) {
+      throw new BadRequestException('Invoice total in Rwf is required');
+    }
+    const totalAmountUsd =
+      dto.totalAmountUsd ?? rwfToUsdAmount(totalAmountRwf, frozenRate);
+
     const invoice = await this.prisma.invoice.create({
       data: {
         invoiceNumber,
@@ -377,14 +387,13 @@ export class InvoicesService {
         buyerAddress: dto.buyerAddress,
         vehicleBrand: dto.vehicleBrand,
         vehicleModel: dto.vehicleModel,
-        totalAmountUsd: dto.totalAmountUsd,
-        currency: 'USD',
+        totalAmountUsd,
+        totalAmountRwf,
+        currency: 'RWF',
         beneficiaryName: company.legalName,
-        bankName: company.usd.bankName,
-        accountNumber: company.usd.accountNumber,
         rwfBankName: company.rwf.bankName,
         rwfAccountNumber: company.rwf.accountNumber,
-        exchangeRateUsed: exchangeRate.usdToRwfEffective,
+        exchangeRateUsed: frozenRate,
         paymentDeadline: validUntil,
         validUntil,
         notes: dto.notes,

@@ -3,7 +3,6 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  Max,
   Min,
   MinLength,
 } from 'class-validator';
@@ -14,6 +13,19 @@ export class UpdatePlatformSettingsDto {
   @IsNumber()
   @Min(0.01)
   bookingFeeUsd?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  bookingFeeRwf?: number;
+
+  /** Frozen leftover-USD display rate. Not a live market feed. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.0001)
+  usdToRwfEffective?: number;
 
   @IsOptional()
   @IsString()
@@ -44,12 +56,4 @@ export class UpdatePlatformSettingsDto {
   @IsString()
   @MinLength(8)
   companyWhatsappNumber?: string;
-
-  /** Static markup % applied on top of the API USDT→RWF rate. */
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  rwfMarkupPercent?: number;
 }
