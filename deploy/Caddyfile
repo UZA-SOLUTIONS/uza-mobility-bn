@@ -1,0 +1,34 @@
+# Caddy obtains and renews the TLS certificate itself. The API publishes no ports, so this
+# file is the entire front door to the platform.
+#
+# NOTE: this serves the API only. There is no frontend in this repository — when one exists,
+# it becomes another reverse_proxy target here and the API moves under /api.
+
+{$MOBILITY_DOMAIN} {
+	encode gzip
+
+	# Uploads can be large; the default request body cap is not.
+	request_body {
+		max_size 25MB
+	}
+
+	reverse_proxy api:7000
+
+	# The platform carries customer records, vehicle records and loan applications. It should
+	# not be indexed, framed, or sniffed.
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}

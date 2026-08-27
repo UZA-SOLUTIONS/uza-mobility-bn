@@ -1,0 +1,69 @@
+# UZA Mobility platform — production stack.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Three containers. Postgres and the API publish no ports at all; Caddy is the only thing the
+# internet can reach, and it obtains and renews its own certificate.
+#
+# This mirrors the UZA Nexus production stack deliberately. Two systems deployed the same way
+# is one thing to learn, one runbook to remember, and one place to fix a mistake.
+
+name: uza-mobility
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # The API waits for this. Without it the first boot races the database and the
+      # migration step fails on a connection that was two seconds from being ready.
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 7000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      # Optional. Absent means the feature is off, never that a default is used.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+    volumes:
+      - storage:/app/storage
+    # No ports. Caddy reaches it on the compose network and nothing else can.
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      MOBILITY_DOMAIN: ${MOBILITY_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+
+volumes:
+  pgdata:
+  storage:
+  caddydata:
+  caddyconfig:
