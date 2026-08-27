@@ -3,62 +3,67 @@
  *
  * ── STATE: THE SUITE DOES NOT RUN. Read this before touching it. ─────────────────────────
  *
- * The failure is a genuine version incompatibility between the installed jest (^30.4.2) and
- * ts-jest (29.4.12). It is not a missing dependency and not a path problem. Diagnosed
- * 27 August 2026, written down here so nobody repeats the two hours.
- *
  * WHAT JEST SAYS
- *     Module …/ts-jest/dist/index.js in the transform option was not found
+ *     Module @swc/jest in the transform option was not found
  *
- * Misleading twice over. ts-jest IS installed — 29.4.12, verified. The file IS present, and
- * `require.resolve` finds it. Jest emits "was not found" when a transform module fails to
- * satisfy the transformer interface, which is a different problem wearing the same message.
+ * The message is wrong in a specific and misleading way. The module IS installed,
+ * `require.resolve` finds it, and it works correctly outside jest:
  *
- * WHAT IS ACTUALLY WRONG
- * jest 30 loads a transform with CommonJS `require` and expects `createTransformer` on the
- * module object itself. Every entry point ts-jest 29.4.12 ships exposes it one level down,
- * under `.default`, because the package is built as ESM. Verified against all of these:
+ *     const {createTransformer} = require('@swc/jest');
+ *     createTransformer().process('export const a: number = 1;', 'x.ts', {config:{}, cacheFS:new Map()});
+ *     // -> returns compiled CommonJS. No error.
  *
- *     ts-jest                                     createTransformer only under .default
- *     ts-jest/legacy                              only under .default
- *     ts-jest/dist/legacy/index.js                only under .default
- *     ts-jest/preprocessor.js                     only under .default
- *     ts-jest/dist/legacy/ts-jest-transformer.js  neither
+ * Jest reports "not found" whenever loading a transform fails for ANY reason, so the
+ * message names the wrong problem.
  *
- * A local adapter re-exporting `.default` at the top level was written and tested — it does
- * expose `createTransformer` as a function, and jest still refused it. So the interop gap is
- * not the only difference between what ts-jest 29.4 provides and what jest 30 expects, and
- * patching around it locally is the wrong repair.
+ * WHAT IS ACTUALLY WRONG — narrowed on 27 August 2026
  *
- * THE FIX — one of these. Each needs a working network connection to install, which is why it
- * is not already done.
+ * Jest cannot load ANY transformer in this project. Not @swc/jest, not ts-jest, and not
+ * babel-jest, which ships inside jest itself. An absolute path to a file that provably
+ * exists produces the same "not found". So the fault is in jest's transform loading in
+ * THIS project, and it is not specific to any transformer.
  *
- *   1. `npm i -D ts-jest@latest`, then check its peer range actually covers jest 30.
- *   2. `npm i -D jest@29 @types/jest@29`, matching the ts-jest already installed.
- *   3. Move to `@swc/jest`, and drop ts-jest:
- *        npm i -D @swc/jest
- *        transform: { '^.+\\.(t|j)s$': '@swc/jest' }
+ * Ruled out, each tested rather than assumed:
+ *   · The transformer's interface. @swc/jest exposes createTransformer at the top level,
+ *     which is exactly what jest 30 wants, and it still fails. (An earlier version of this
+ *     comment blamed ts-jest's ESM interop for exposing createTransformer only under
+ *     .default. That was wrong — it is a real difference, but it is not the cause, because
+ *     a transformer without that difference fails identically.)
+ *   · Module resolution. require.resolve finds every one of them from this directory.
+ *   · A corrupted node_modules. Deleted and reinstalled with `npm ci`. No change.
+ *   · Version skew across the jest packages. jest-resolve and @jest/transform sit at
+ *     30.4.1 while the rest are at 30.4.2 — but 30.4.1 is the latest published version of
+ *     both, so this is normal, not skew.
+ *   · Blocked postinstall scripts. `npm approve-scripts` then `npm rebuild`. No change.
+ *   · rootDir. This config used to live in package.json with rootDir "src", where a bare
+ *     transform name cannot resolve because there is no node_modules under src. That was a
+ *     genuine second bug and it IS fixed: rootDir is the project root, the test pattern is
+ *     scoped to src instead, and the jest block is gone from package.json so there is one
+ *     source of truth rather than two that can disagree.
  *
- * **Option 3 is the recommendation.** It is far faster on a codebase this size, and it skips
- * type-checking during tests — which costs nothing here, because `tsc --noEmit` runs
- * separately and passes clean.
+ * WHERE TO LOOK NEXT
+ *   1. Reproduce in an empty directory with jest 30 and one trivial test. If it fails
+ *      there too, the fault is the environment (Node 24 with jest 30 on Windows is the
+ *      obvious suspect) and not this repository.
+ *   2. If it passes there, bisect this project against it — tsconfig paths, the
+ *      package.json "type" field, and any .npmrc are the things that differ.
+ *   3. Vitest is the pragmatic escape. UZA Nexus already uses it, so the team would be
+ *      maintaining one test runner instead of two.
  *
- * ── WHAT IS ALREADY FIXED ────────────────────────────────────────────────────────────────
- *
- * This config used to live in package.json with `rootDir: "src"`. That was a second and
- * separate bug: jest resolves a bare transform name relative to rootDir, and there is no
- * node_modules inside src. rootDir is now the project root, the test pattern is scoped to src
- * instead, and the `jest` block has been removed from package.json so there is one source of
- * truth rather than two that can disagree.
- *
- * Fix the version mismatch above and this file should work as it stands.
+ * WHAT THIS DOES NOT BLOCK
+ * The application builds, the production image builds, the container serves, and
+ * `tsc --noEmit` passes clean. This is a gap in verification, not a broken application.
+ * It should not hold up a deployment, and it should not be forgotten either.
  */
 module.exports = {
   rootDir: '.',
   moduleFileExtensions: ['js', 'json', 'ts'],
   testRegex: 'src/.*\\.spec\\.ts$',
+  // @swc/jest rather than ts-jest: far faster on a codebase this size, and it skips
+  // type-checking during tests, which costs nothing because tsc --noEmit runs separately
+  // and passes. Neither loads today — see above.
   transform: {
-    '^.+\\.(t|j)s$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
+    '^.+\\.(t|j)s$': '@swc/jest',
   },
   collectCoverageFrom: ['src/**/*.(t|j)s'],
   coverageDirectory: 'coverage',

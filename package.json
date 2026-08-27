@@ -70,6 +70,8 @@
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
     "@prisma/client": "^7.8.0",
+    "@swc/core": "^1.16.1",
+    "@swc/jest": "^0.2.39",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/multer": "^2.1.0",
