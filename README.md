@@ -1,98 +1,192 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# UZA Mobility platform
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+The trade backend: vehicles, listings, orders, invoices, payments, parts, sellers, financing,
+charging-station commerce and inspections. **NestJS + Prisma + Postgres + MongoDB.**
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+**102 Prisma models · 22 migrations · 45 controllers · 219 endpoints.**
 
-## Description
+> ### Read this first: there is no front end
+>
+> Nothing calls this API. Not in this repository, and not in any of the other eight UZA
+> repositories on the founder's machine. `admin/listings`, `admin/orders`, `admin/invoices`,
+> `admin/parts`, `admin/financing` and eighteen more admin route groups all exist, and
+> **nothing renders any of them.**
+>
+> This is a complete, working back end waiting for a front end. **Building that front end is
+> the largest and most valuable remaining piece of work in the estate** — it is the only thing
+> standing between a finished API and people actually using it.
+>
+> If a front end does exist somewhere not cloned locally, that changes this paragraph
+> entirely, and it is the first question to answer.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+---
 
-## Project setup
+## Running it, in five minutes
+
+You need **Node 22+**, **npm** (not pnpm — this repo uses `package-lock.json`) and **Docker**.
 
 ```bash
-$ npm install
+npm ci
+cp .env.example .env                   # then set DATABASE_URL and MONGODB_URI
+npx prisma generate
+npx prisma migrate deploy
+npm run start:dev
 ```
 
-## Compile and run the project
+- API → <http://localhost:7000>
+- **Swagger → <http://localhost:7000/api/docs>** ← start here. It lists all 219 endpoints and
+  cannot go stale
+
+### It needs TWO databases
+
+The thing most likely to waste your first hour.
+
+| | | Why |
+|---|---|---|
+| **Postgres** | `DATABASE_URL` | Everything: 102 models |
+| **MongoDB** | `MONGODB_URI` | **Uploads, via GridFS.** The API refuses to start without it |
+
+The refusal is correct and deliberate, but the message — *"MONGODB_URI is required — uploads
+are stored in MongoDB GridFS"* — is easy to miss in a wall of startup logs.
+
+Fastest way to get both:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+docker run -d --name uza-pg    -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=uza_mobility -p 5432:5432 postgres:16-alpine
+docker run -d --name uza-mongo -p 27017:27017 mongo:7
 ```
 
-## Run tests
+`docker-compose.prod.yml` defines both with healthchecks and is a good reference.
+
+### Useful scripts
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm run env:check        # which environment variables are missing
+npm run db:check         # is the database reachable and migrated
+npm run db:studio        # Prisma Studio — browse the data
+npx tsc --noEmit         # typecheck; must be clean
 ```
+
+---
+
+## How the code is organised
+
+```
+src/
+  main.ts                  boots on :7000, Swagger at /api/docs
+  modules/                 22 modules, 45 controllers
+    listings/              vehicles for sale — the core of the marketplace
+    orders/  invoices/  payments/  commerce/
+    parts/                 spare parts
+    sellers/               third-party vendors and their subscriptions
+    financing/  fleet/     loan applications, fleet requests
+    charging-stations/     station DIRECTORY + selling piles. NOT OCPP — see below
+    energy/  bookings/  inquiries/  promotions/  pricing/
+    sustainability/  platform-settings/  notifications/  bank-files/
+    auth/  admin/
+  mongo/                   GridFS uploads
+  common/  users/
+prisma/
+  schema.prisma            102 models
+  migrations/              22, all applied
+```
+
+### `charging-stations` here is commerce, not operations
+
+Worth knowing before you go looking for OCPP in this repo — **there is none.**
+
+| | |
+|---|---|
+| **This repo** | `ChargingStation` (address, opening hours, ports free) and `ChargingProduct` (kW, `solarIncluded`, `priceUsd`). A public directory, and **selling piles to site owners** |
+| **`uza-charge` repo** | Sessions, meter values, tariffs, faults, RFID, charger commands. **Running the hardware** |
+
+They are not duplicates. They are the two halves of the business: one sells and lists stations,
+the other operates them.
+
+---
+
+## Adding a feature
+
+**1 · Model it** in `prisma/schema.prisma`, then:
+
+```bash
+npx prisma migrate dev --name your_change
+```
+
+**2 · Module** under `src/modules/<feature>/` — `*.module.ts`, `*.service.ts`,
+`*.controller.ts`, `dto/`. Copy the shape of `src/modules/parts/`.
+
+**3 · Business logic in the service**, not the controller. Controllers validate input with
+`class-validator` DTOs, call the service, and return.
+
+**4 · Register** the module in `src/app.module.ts`.
+
+**5 · Document it** with `@ApiTags` / `@ApiOperation` so it appears in Swagger. That page is
+how everybody else discovers your endpoint.
+
+---
+
+## Things that will bite you
+
+**Prisma 7 with the `PrismaPg` driver adapter.** Configuration lives in `prisma.config.ts`,
+which loads `dotenv/config`. `prisma generate` must run **before** `nest build` — the compiler
+needs the generated types.
+
+**`prisma` and `@prisma/client` are production dependencies, deliberately.** Do not move them
+to `devDependencies`. This image migrates itself and runs itself, so both are runtime needs
+however they look on a laptop. When they were dev dependencies, the container tried to
+*download* `prisma@8.0.0-rc` from the network at startup. **The Dockerfile now fails the build
+if either moves back**, so you find out in CI rather than at 2am.
+
+**Uploads never touch the local disk.** They go to MongoDB GridFS. `PUBLIC_UPLOAD_BASE_URL` is
+how a browser reaches them, and **getting it wrong fails silently** — every image URL the API
+returns is unreachable, and nothing logs it.
+
+**The test suite does not run.** See below before spending time on it.
+
+---
+
+## Known issues
+
+**Jest cannot load any transformer in this project** — not `@swc/jest`, not `ts-jest`, and not
+`babel-jest`, which ships inside jest. An absolute path to a file that provably exists produces
+the same "not found".
+
+**The full diagnosis is at the top of `jest.config.js`. Read it before you start** — it records
+what has already been ruled out by testing rather than assumption: the transformer interface,
+module resolution, a corrupted `node_modules` (deleted and reinstalled), version skew, and
+blocked postinstall scripts.
+
+`npx tsc --noEmit` passes, the image builds, and the container serves. **This is a gap in
+verification, not a broken application.** Vitest is the pragmatic escape — UZA Nexus already
+uses it, so the team would maintain one test runner instead of two.
+
+**A local `.env` here points at `uza_mobility_test`.** Developing against a database whose name
+says it is for tests is confusing the day somebody wonders where their data went.
+
+---
 
 ## Deployment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Postgres + MongoDB + the API + Caddy with automatic TLS. Only Caddy publishes a port. The image
+is multi-stage, ~435MB, and runs migrations at container start — **read the comments in
+`Dockerfile` before editing it.**
 
-## Resources
+Whole-estate deployment (this plus Nexus and the three apps behind one proxy):
+`00-group/deploy/` in the `UZA-SOLUTIONS-GUIDE` repository.
 
-Check out a few resources that may come in handy when working with NestJS:
+---
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Context
 
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+| | |
+|---|---|
+| What is verified, what is broken | `UZA-SOLUTIONS-GUIDE` → `00-group/audit-package.md` |
+| How the systems relate | `00-group/how-the-systems-relate.md` |
+| What should be one product | `00-group/the-product-architecture.md` |
+| One person, one identity | `04-uza-cloud/uza-id-adoption.md` — **this repo adopts it first** |
+| Where every repo and database is | `00-group/the-estate-map.md` |
