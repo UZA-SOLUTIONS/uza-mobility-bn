@@ -142,24 +142,28 @@ if either moves back**, so you find out in CI rather than at 2am.
 how a browser reaches them, and **getting it wrong fails silently** — every image URL the API
 returns is unreachable, and nothing logs it.
 
-**The test suite does not run.** See below before spending time on it.
-
 ---
 
-## Known issues
+## Testing
 
-**Jest cannot load any transformer in this project** — not `@swc/jest`, not `ts-jest`, and not
-`babel-jest`, which ships inside jest. An absolute path to a file that provably exists produces
-the same "not found".
+```bash
+npm test              # vitest run
+npm run test:watch
+```
 
-**The full diagnosis is at the top of `jest.config.js`. Read it before you start** — it records
-what has already been ruled out by testing rather than assumption: the transformer interface,
-module resolution, a corrupted `node_modules` (deleted and reinstalled), version skew, and
-blocked postinstall scripts.
+**The suite runs on vitest, not jest.** Jest could not load *any* transformer in this project —
+not `ts-jest`, not `@swc/jest`, not `babel-jest`, which ships inside jest itself — so the suite
+never ran at all. It was never diagnosed to a root cause. Vitest with `unplugin-swc` works, and
+it means one runner across the estate: **UZA Nexus already uses vitest**, so a developer moving
+between the two repositories writes tests the same way in both.
 
-`npx tsc --noEmit` passes, the image builds, and the container serves. **This is a gap in
-verification, not a broken application.** Vitest is the pragmatic escape — UZA Nexus already
-uses it, so the team would maintain one test runner instead of two.
+`src/modules/listings/listing-pricing.util.spec.ts` is the reference test — **copy its shape.**
+It targets pure functions, needs no database, and runs in milliseconds. Where a service needs
+Prisma, mock the client (see `src/app.controller.spec.ts`) rather than reaching for a real one.
+
+**Coverage is thin and honest about it: 11 tests against 219 endpoints.** The runner working is
+what unblocks that; writing them is the work. Start where a silent break costs money — pricing,
+invoices, payments, financing.
 
 **A local `.env` here points at `uza_mobility_test`.** Developing against a database whose name
 says it is for tests is confusing the day somebody wonders where their data went.

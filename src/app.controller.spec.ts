@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -6,7 +7,7 @@ import { PrismaService } from './prisma/prisma.service';
 describe('AppController', () => {
   let appController: AppController;
   const prismaServiceMock = {
-    $queryRaw: jest.fn(),
+    $queryRaw: vi.fn(),
   };
 
   beforeEach(async () => {
@@ -25,8 +26,8 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('returns the API greeting', () => {
+      expect(appController.getHello()).toBe('Welcome to UZA MOBILITY API');
     });
   });
 });
