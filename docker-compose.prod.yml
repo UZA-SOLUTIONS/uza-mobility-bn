@@ -28,6 +28,21 @@ services:
       timeout: 5s
       retries: 20
 
+  # Uploads live in MongoDB GridFS, not on disk and not in Postgres. The API refuses to
+  # start without it — "MONGODB_URI is required — uploads are stored in MongoDB GridFS" —
+  # which is the correct behaviour and was also the reason the first real container run
+  # failed. Two databases is unusual enough to be worth stating rather than discovering.
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.adminCommand("ping")']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   api:
     build:
       context: .
@@ -36,13 +51,39 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      mongo:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 7000
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       JWT_SECRET: ${JWT_SECRET}
+
+      # Uploads. All three are required — the API will not start without MONGODB_URI.
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-uza_mobility}
+      GRIDFS_BUCKET_NAME: ${GRIDFS_BUCKET_NAME:-uploads}
+      # Where a stored upload is served from, as a browser sees it. Wrong value here means
+      # every image URL the API hands out is unreachable, and nothing warns you.
+      PUBLIC_UPLOAD_BASE_URL: ${PUBLIC_UPLOAD_BASE_URL}
+
+      # Links in emails and redirects point at these.
+      FRONTEND_URL: ${FRONTEND_URL}
+      ADMIN_FRONTEND_URL: ${ADMIN_FRONTEND_URL}
+
       # Optional. Absent means the feature is off, never that a default is used.
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      EXCHANGE_RATE_API_KEY: ${EXCHANGE_RATE_API_KEY:-}
     volumes:
       - storage:/app/storage
     # No ports. Caddy reaches it on the compose network and nothing else can.
@@ -64,6 +105,7 @@ services:
 
 volumes:
   pgdata:
+  mongodata:
   storage:
   caddydata:
   caddyconfig:

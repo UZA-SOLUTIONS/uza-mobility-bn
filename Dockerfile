@@ -38,7 +38,21 @@ COPY src ./src
 RUN npm run build
 
 # Drop the build-only dependencies from what gets copied forward.
+#
+# This is why `prisma` and `@prisma/client` are production dependencies rather than dev
+# ones. Prune removes devDependencies, and this image both MIGRATES itself (the CMD runs
+# `prisma migrate deploy`) and RUNS itself (main.ts requires the client), so both are
+# runtime needs however they look on a laptop.
+#
+# When they were dev dependencies the container failed twice over, and neither failure
+# was visible until it was actually run: `npx prisma` could not find a local CLI so it
+# tried to DOWNLOAD prisma@8.0.0-rc from the network at container start — an unpinned
+# release candidate, on a box that may have no outbound access — and the server would
+# then have died on a missing @prisma/client if it had ever got that far.
 RUN npm prune --omit=dev
+
+# Fail the build rather than the deployment if either ever slips back into devDependencies.
+RUN node -e "require.resolve('@prisma/client')"  && test -x node_modules/.bin/prisma  || (echo 'prisma and @prisma/client must be production dependencies — see the note above' && exit 1)
 
 # ---------------------------------------------------------------- runtime
 FROM node:22-alpine AS runtime
