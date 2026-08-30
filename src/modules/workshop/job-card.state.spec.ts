@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import {
   assertTransition,
@@ -21,8 +21,9 @@ const hvCertified = {
   certifiedUntil: future,
 };
 
-const go = (over: Partial<TransitionContext> & Pick<TransitionContext, 'from' | 'to'>) =>
-  assertTransition({ now, ...over });
+const go = (
+  over: Partial<TransitionContext> & Pick<TransitionContext, 'from' | 'to'>,
+) => assertTransition({ now, ...over });
 
 describe('the happy path a certified centre actually follows', () => {
   it('walks booking to closed without skipping a stage', () => {
@@ -56,8 +57,12 @@ describe('the happy path a certified centre actually follows', () => {
 
   it('refuses a jump that skips a stage', () => {
     // Received straight to in-progress is how a car gets worked on before anyone priced it.
-    expect(() => go({ from: 'RECEIVED', to: 'IN_PROGRESS' })).toThrow(BadRequestException);
-    expect(() => go({ from: 'BOOKED', to: 'HANDED_OVER' })).toThrow(BadRequestException);
+    expect(() => go({ from: 'RECEIVED', to: 'IN_PROGRESS' })).toThrow(
+      BadRequestException,
+    );
+    expect(() => go({ from: 'BOOKED', to: 'HANDED_OVER' })).toThrow(
+      BadRequestException,
+    );
   });
 });
 
@@ -77,9 +82,9 @@ describe('gate 1 — no work without authorisation', () => {
   it('sends additional work back through the SAME gate — there is no bypass', () => {
     // The bill being larger than the quote is the single biggest destroyer of trust in
     // vehicle repair. ADDITIONAL_WORK_FOUND has exactly one exit.
-    expect(() => go({ from: 'ADDITIONAL_WORK_FOUND', to: 'IN_PROGRESS' })).toThrow(
-      BadRequestException,
-    );
+    expect(() =>
+      go({ from: 'ADDITIONAL_WORK_FOUND', to: 'IN_PROGRESS' }),
+    ).toThrow(BadRequestException);
     expect(() =>
       go({ from: 'ADDITIONAL_WORK_FOUND', to: 'AWAITING_AUTHORISATION' }),
     ).not.toThrow();
@@ -121,15 +126,23 @@ describe('gate 2 — quality control is somebody else’s signature', () => {
     // A quality check that cannot fail is not a quality check. And rework to correct the
     // workshop's own defect is inside the scope already authorised, done at the workshop's
     // cost — re-authorising it would imply the customer is paying twice.
-    expect(() => go({ from: 'QUALITY_CHECK', to: 'IN_PROGRESS' })).not.toThrow();
+    expect(() =>
+      go({ from: 'QUALITY_CHECK', to: 'IN_PROGRESS' }),
+    ).not.toThrow();
     expect(() => go({ from: 'ROAD_TEST', to: 'IN_PROGRESS' })).not.toThrow();
   });
 
   it('still demands authorisation when work RESUMES after waiting for parts', () => {
     // Not rework — this is the original job continuing, and it must still be covered.
-    expect(() => go({ from: 'AWAITING_PARTS', to: 'IN_PROGRESS' })).toThrow(/authorised/);
+    expect(() => go({ from: 'AWAITING_PARTS', to: 'IN_PROGRESS' })).toThrow(
+      /authorised/,
+    );
     expect(() =>
-      go({ from: 'AWAITING_PARTS', to: 'IN_PROGRESS', authorisedAt: new Date() }),
+      go({
+        from: 'AWAITING_PARTS',
+        to: 'IN_PROGRESS',
+        authorisedAt: new Date(),
+      }),
     ).not.toThrow();
   });
 });
@@ -149,7 +162,9 @@ describe('gate 3 — high voltage is a named, unexpired certificate', () => {
   });
 
   it('refuses when nobody’s certificate was supplied', () => {
-    expect(() => go({ ...hv, performedByTechnicianId: TECH })).toThrow(/certificate/);
+    expect(() => go({ ...hv, performedByTechnicianId: TECH })).toThrow(
+      /certificate/,
+    );
   });
 
   it('refuses somebody else’s certificate', () => {
@@ -203,7 +218,9 @@ describe('gate 4 — nothing leaves unchecked', () => {
   };
 
   it('refuses handover when QC has not passed', () => {
-    expect(() => go({ ...base, qualityCheckPassed: false })).toThrow(/quality check/);
+    expect(() => go({ ...base, qualityCheckPassed: false })).toThrow(
+      /quality check/,
+    );
   });
 
   it('demands a road test after brake work', () => {

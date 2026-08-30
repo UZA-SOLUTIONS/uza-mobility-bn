@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import type { Socket } from 'socket.io';
+import type { UzaHandshakeAuth, UzaSocket } from './ws.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RbacService } from '../auth/rbac.service';
 import type { JwtUserPayload } from '../../users/users.types';
@@ -15,8 +15,12 @@ export class WsAuthService {
     private readonly rbacService: RbacService,
   ) {}
 
-  extractToken(client: Socket): string | null {
-    const authToken = client.handshake.auth?.token;
+  extractToken(client: UzaSocket): string | null {
+    // Three places a client may put a token, all of them attacker-controlled. Each
+    // is narrowed to a non-empty string before it is used; nothing here trusts the
+    // handshake's declared types, because the client writes them.
+    const authToken = (client.handshake.auth as UzaHandshakeAuth | undefined)
+      ?.token;
     if (typeof authToken === 'string' && authToken.length > 0) {
       return authToken;
     }
@@ -34,7 +38,7 @@ export class WsAuthService {
     return null;
   }
 
-  async authenticate(client: Socket): Promise<JwtUserPayload | null> {
+  async authenticate(client: UzaSocket): Promise<JwtUserPayload | null> {
     const token = this.extractToken(client);
     if (!token) {
       return null;

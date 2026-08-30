@@ -144,14 +144,20 @@ export function placeHold(input: PlaceHoldInput): Hold {
  */
 export function extendHold(hold: Hold, now: Date): Hold {
   if (!isActive(hold, now)) {
-    throw new ConflictException('That hold has already ended. Place a new one.');
+    throw new ConflictException(
+      'That hold has already ended. Place a new one.',
+    );
   }
   if (hold.extensionsUsed >= MAX_EXTENSIONS) {
     throw new ConflictException('A hold can only be extended once.');
   }
 
-  const proposed = new Date(hold.expiresAt.getTime() + EXTENSION_MINUTES * 60_000);
-  const ceiling = new Date(hold.createdAt.getTime() + MAX_TOTAL_HOLD_MINUTES * 60_000);
+  const proposed = new Date(
+    hold.expiresAt.getTime() + EXTENSION_MINUTES * 60_000,
+  );
+  const ceiling = new Date(
+    hold.createdAt.getTime() + MAX_TOTAL_HOLD_MINUTES * 60_000,
+  );
   // Extend up to the ceiling, never past it. Silently clamping is right here: the driver
   // gets what is available rather than an error that helps nobody.
   const expiresAt = proposed.getTime() > ceiling.getTime() ? ceiling : proposed;
@@ -165,7 +171,9 @@ export function extendHold(hold: Hold, now: Date): Hold {
 /** The driver arrived and plugged in. From here it is a session, not a hold. */
 export function convertToSession(hold: Hold, now: Date): Hold {
   if (!isActive(hold, now)) {
-    throw new ConflictException('That hold has expired. The connector may have been taken.');
+    throw new ConflictException(
+      'That hold has expired. The connector may have been taken.',
+    );
   }
   return { ...hold, convertedAt: now };
 }
@@ -178,7 +186,10 @@ export function cancelHold(hold: Hold, now: Date): Hold {
 /** Seconds left, floored at zero. For a countdown the driver can see. */
 export function secondsRemaining(hold: Hold, now: Date): number {
   if (!isActive(hold, now)) return 0;
-  return Math.max(0, Math.floor((hold.expiresAt.getTime() - now.getTime()) / 1000));
+  return Math.max(
+    0,
+    Math.floor((hold.expiresAt.getTime() - now.getTime()) / 1000),
+  );
 }
 
 /**
@@ -189,7 +200,9 @@ export function secondsRemaining(hold: Hold, now: Date): number {
  */
 export function wasNoShow(hold: Hold, now: Date): boolean {
   return (
-    !hold.convertedAt && !hold.cancelledAt && hold.expiresAt.getTime() <= now.getTime()
+    !hold.convertedAt &&
+    !hold.cancelledAt &&
+    hold.expiresAt.getTime() <= now.getTime()
   );
 }
 
@@ -199,7 +212,9 @@ export function availableConnectors(
   holds: readonly Hold[],
   now: Date,
 ): string[] {
-  const held = new Set(holds.filter((h) => isActive(h, now)).map((h) => h.connectorId));
+  const held = new Set(
+    holds.filter((h) => isActive(h, now)).map((h) => h.connectorId),
+  );
   return connectorIds.filter((id) => !held.has(id));
 }
 
@@ -210,14 +225,18 @@ export function availableConnectors(
  * window is too long or the no-show consequence too soft — and it is the station owner,
  * not UZA, who is paying for it.
  */
-export function idleMinutesLostToNoShows(holds: readonly Hold[], now: Date): number {
+export function idleMinutesLostToNoShows(
+  holds: readonly Hold[],
+  now: Date,
+): number {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new BadRequestException('now must be a valid date');
   }
   return holds
     .filter((h) => wasNoShow(h, now))
     .reduce(
-      (sum, h) => sum + (h.expiresAt.getTime() - h.createdAt.getTime()) / 60_000,
+      (sum, h) =>
+        sum + (h.expiresAt.getTime() - h.createdAt.getTime()) / 60_000,
       0,
     );
 }

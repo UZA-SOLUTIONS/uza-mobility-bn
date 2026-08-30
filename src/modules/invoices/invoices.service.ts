@@ -120,8 +120,6 @@ export class InvoicesService {
       this.exchangeRateService.getSnapshot({ refreshIfStale: false }),
     ]);
 
-    const totalAmountUsd = listing.listingPricing.finalPriceUsd;
-
     const invoice = await this.prisma.$transaction(async (tx) => {
       const inv = await tx.invoice.create({
         data: {

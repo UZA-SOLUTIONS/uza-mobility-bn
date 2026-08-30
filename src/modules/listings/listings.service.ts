@@ -11,7 +11,6 @@ import {
   Prisma,
   SellerType,
 } from '@prisma/client';
-import { UploadsModule } from '../../common/uploads/uploads.module';
 import { StorageService } from '../../common/uploads/storage.service';
 import type { RequestAuditContext } from '../../common/audit/request-context.util';
 import { resolveUniqueSlug } from '../../common/utils/slug.util';
@@ -578,8 +577,7 @@ export class ListingsService {
     const sellerType = listing.sellerType;
     const country = listingFields.country ?? listing.country;
     let pricingCreate:
-      | Prisma.ListingPricingCreateWithoutListingInput
-      | undefined;
+      Prisma.ListingPricingCreateWithoutListingInput | undefined;
     let deliveryDaysFromPricing: number | undefined;
 
     if (pricing) {
@@ -821,8 +819,7 @@ export class ListingsService {
     const sellerType = dto.sellerType ?? listing.sellerType;
     const country = dto.country ?? listing.country;
     let pricingCreate:
-      | Prisma.ListingPricingCreateWithoutListingInput
-      | undefined;
+      Prisma.ListingPricingCreateWithoutListingInput | undefined;
     let deliveryDaysFromPricing: number | undefined;
 
     if (dto.pricing) {
@@ -1527,7 +1524,7 @@ export class ListingsService {
   ): Prisma.ListingUpdateInput {
     return Object.fromEntries(
       Object.entries(data).filter(([, value]) => value !== undefined),
-    ) as Prisma.ListingUpdateInput;
+    );
   }
 
   private async validateCategoryRefs(

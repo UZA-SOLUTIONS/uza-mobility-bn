@@ -66,10 +66,10 @@ export function toPublicListing<T extends ListingWithRelations>(
     ...rest,
     isBooked: false,
     videoUrl: rest.videoUrl
-      ? toAbsoluteUploadUrl(rest.videoUrl as string)
+      ? toAbsoluteUploadUrl(rest.videoUrl)
       : rest.videoUrl,
     brochureUrl: rest.brochureUrl
-      ? toAbsoluteUploadUrl(rest.brochureUrl as string)
+      ? toAbsoluteUploadUrl(rest.brochureUrl)
       : rest.brochureUrl,
     photos: listing.photos.map((photo) => ({
       ...photo,

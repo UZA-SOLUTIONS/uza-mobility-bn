@@ -75,13 +75,17 @@ export function quotePrepayment(
   prepaymentPercent: number,
 ): PrepaymentQuote {
   if (!Number.isInteger(priceMinor) || priceMinor < 0) {
-    throw new BadRequestException('priceMinor must be a non-negative integer of minor units');
+    throw new BadRequestException(
+      'priceMinor must be a non-negative integer of minor units',
+    );
   }
   const discountPercent = discountPercentFor(prepaymentPercent);
 
   const discountAmount = Math.round((priceMinor * discountPercent) / 100);
   const netPriceAfterDiscount = priceMinor - discountAmount;
-  const amountDueNow = Math.round((netPriceAfterDiscount * prepaymentPercent) / 100);
+  const amountDueNow = Math.round(
+    (netPriceAfterDiscount * prepaymentPercent) / 100,
+  );
 
   return {
     prepaymentPercent,

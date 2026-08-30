@@ -76,7 +76,12 @@ const WAITING: Partial<Record<JobState, Attention>> = {
 };
 
 /** Jobs that have left the workshop's hands and should not clutter the board. */
-const OFF_BOARD: readonly JobState[] = ['HANDED_OVER', 'CLOSED', 'CANCELLED', 'DECLINED'];
+const OFF_BOARD: readonly JobState[] = [
+  'HANDED_OVER',
+  'CLOSED',
+  'CANCELLED',
+  'DECLINED',
+];
 
 /**
  * Build the board: the open jobs, most urgent first.
@@ -84,7 +89,10 @@ const OFF_BOARD: readonly JobState[] = ['HANDED_OVER', 'CLOSED', 'CANCELLED', 'D
  * Closed and handed-over jobs are dropped rather than greyed out. A board is a list of
  * things to do, and anything that needs no action is noise on it.
  */
-export function buildBoard(jobs: readonly BoardJob[], now = new Date()): BoardRow[] {
+export function buildBoard(
+  jobs: readonly BoardJob[],
+  now = new Date(),
+): BoardRow[] {
   return jobs
     .filter((j) => !OFF_BOARD.includes(j.state))
     .map((j) => toRow(j, now))
@@ -97,7 +105,9 @@ export function buildBoard(jobs: readonly BoardJob[], now = new Date()): BoardRo
 }
 
 function toRow(job: BoardJob, now: Date): BoardRow {
-  const minutesToPromise = Math.round((job.promisedAt.getTime() - now.getTime()) / 60_000);
+  const minutesToPromise = Math.round(
+    (job.promisedAt.getTime() - now.getTime()) / 60_000,
+  );
   const waiting = WAITING[job.state];
 
   // Lateness outranks being blocked. A late job that is also awaiting parts is still late,
@@ -105,9 +115,15 @@ function toRow(job: BoardJob, now: Date): BoardRow {
   const attention: Attention =
     minutesToPromise < 0
       ? 'OVERDUE'
-      : (waiting ?? (minutesToPromise <= AT_RISK_MINUTES ? 'AT_RISK' : 'ON_TRACK'));
+      : (waiting ??
+        (minutesToPromise <= AT_RISK_MINUTES ? 'AT_RISK' : 'ON_TRACK'));
 
-  return { ...job, attention, minutesToPromise, note: noteFor(job, attention, minutesToPromise) };
+  return {
+    ...job,
+    attention,
+    minutesToPromise,
+    note: noteFor(job, attention, minutesToPromise),
+  };
 }
 
 function noteFor(job: BoardJob, attention: Attention, mins: number): string {
@@ -132,7 +148,9 @@ function noteFor(job: BoardJob, attention: Attention, mins: number): string {
  * assumes somebody else is working on.
  */
 export function unassigned(rows: readonly BoardRow[]): BoardRow[] {
-  return rows.filter((r) => r.technicianId === null && r.state === 'IN_PROGRESS');
+  return rows.filter(
+    (r) => r.technicianId === null && r.state === 'IN_PROGRESS',
+  );
 }
 
 /**
@@ -142,7 +160,9 @@ export function unassigned(rows: readonly BoardRow[]): BoardRow[] {
  * defensible denominator — shift length, breaks, standard labour times — and inventing one
  * produces a number that looks precise and means nothing.
  */
-export function loadByTechnician(rows: readonly BoardRow[]): Map<string, number> {
+export function loadByTechnician(
+  rows: readonly BoardRow[],
+): Map<string, number> {
   const load = new Map<string, number>();
   for (const r of rows) {
     if (!r.technicianId) continue;

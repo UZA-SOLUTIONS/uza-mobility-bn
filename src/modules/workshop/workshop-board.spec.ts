@@ -31,7 +31,13 @@ describe('the ordering, which is the product', () => {
       ],
       now,
     );
-    expect(board.map((r) => r.jobRef)).toEqual(['late', 'risk', 'auth', 'parts', 'ontrack']);
+    expect(board.map((r) => r.jobRef)).toEqual([
+      'late',
+      'risk',
+      'auth',
+      'parts',
+      'ontrack',
+    ]);
   });
 
   it('ranks awaiting-authorisation above awaiting-parts', () => {
@@ -44,32 +50,39 @@ describe('the ordering, which is the product', () => {
       ],
       now,
     );
-    expect(board[0]!.jobRef).toBe('auth');
+    expect(board[0].jobRef).toBe('auth');
   });
 
   it('treats additional work found as awaiting authorisation, because it is', () => {
-    const [row] = buildBoard([job({ jobRef: 'x', state: 'ADDITIONAL_WORK_FOUND' })], now);
-    expect(row!.attention).toBe('AWAITING_AUTHORISATION');
+    const [row] = buildBoard(
+      [job({ jobRef: 'x', state: 'ADDITIONAL_WORK_FOUND' })],
+      now,
+    );
+    expect(row.attention).toBe('AWAITING_AUTHORISATION');
   });
 
   it('keeps lateness above being blocked — a late blocked job is still late', () => {
     // The customer still needs telling, whatever the workshop is waiting on.
     const [row] = buildBoard(
-      [job({ jobRef: 'x', state: 'AWAITING_PARTS', promisedAt: inMinutes(-10) })],
+      [
+        job({
+          jobRef: 'x',
+          state: 'AWAITING_PARTS',
+          promisedAt: inMinutes(-10),
+        }),
+      ],
       now,
     );
-    expect(row!.attention).toBe('OVERDUE');
+    expect(row.attention).toBe('OVERDUE');
   });
 
   it('breaks ties by promise time, then by ref so the order is stable', () => {
-    const a = buildBoard(
-      [job({ jobRef: 'b' }), job({ jobRef: 'a' })],
-      now,
-    ).map((r) => r.jobRef);
-    const b = buildBoard(
-      [job({ jobRef: 'a' }), job({ jobRef: 'b' })],
-      now,
-    ).map((r) => r.jobRef);
+    const a = buildBoard([job({ jobRef: 'b' }), job({ jobRef: 'a' })], now).map(
+      (r) => r.jobRef,
+    );
+    const b = buildBoard([job({ jobRef: 'a' }), job({ jobRef: 'b' })], now).map(
+      (r) => r.jobRef,
+    );
     expect(a).toEqual(b);
     expect(a).toEqual(['a', 'b']);
   });
@@ -98,9 +111,12 @@ describe('what is on the board and what is not', () => {
 
 describe('the note a manager reads', () => {
   it('says how late, and to call', () => {
-    const [row] = buildBoard([job({ jobRef: 'x', promisedAt: inMinutes(-45) })], now);
-    expect(row!.note).toContain('45 min past');
-    expect(row!.note).toMatch(/call the customer/i);
+    const [row] = buildBoard(
+      [job({ jobRef: 'x', promisedAt: inMinutes(-45) })],
+      now,
+    );
+    expect(row.note).toContain('45 min past');
+    expect(row.note).toMatch(/call the customer/i);
   });
 
   it('says when nobody is assigned to a job that is nearly due', () => {
@@ -108,12 +124,15 @@ describe('the note a manager reads', () => {
       [job({ jobRef: 'x', promisedAt: inMinutes(30), technicianId: null })],
       now,
     );
-    expect(row!.note).toMatch(/nobody is assigned/i);
+    expect(row.note).toMatch(/nobody is assigned/i);
   });
 
   it('says why an authorisation delay costs money', () => {
-    const [row] = buildBoard([job({ jobRef: 'x', state: 'AWAITING_AUTHORISATION' })], now);
-    expect(row!.note).toMatch(/earning nothing/i);
+    const [row] = buildBoard(
+      [job({ jobRef: 'x', state: 'AWAITING_AUTHORISATION' })],
+      now,
+    );
+    expect(row.note).toMatch(/earning nothing/i);
   });
 });
 

@@ -11,7 +11,9 @@ const now = new Date('2026-08-29');
 const valid = new Date('2027-01-01');
 const expired = new Date('2026-01-01');
 
-const responder = (over: Partial<Responder> & Pick<Responder, 'responderId'>): Responder => ({
+const responder = (
+  over: Partial<Responder> & Pick<Responder, 'responderId'>,
+): Responder => ({
   name: over.responderId,
   distanceKm: 5,
   certifiedFor: ['GENERAL'],
@@ -43,8 +45,16 @@ describe('who gets sent', () => {
       now,
       responders: [
         responder({ responderId: 'busy', distanceKm: 1, available: false }),
-        responder({ responderId: 'lapsed', distanceKm: 2, certifiedUntil: expired }),
-        responder({ responderId: 'wrong-skill', distanceKm: 3, certifiedFor: ['BODY'] }),
+        responder({
+          responderId: 'lapsed',
+          distanceKm: 2,
+          certifiedUntil: expired,
+        }),
+        responder({
+          responderId: 'wrong-skill',
+          distanceKm: 3,
+          certifiedFor: ['BODY'],
+        }),
         responder({ responderId: 'ok', distanceKm: 12 }),
       ],
     });
@@ -76,8 +86,16 @@ describe('the rule that overrides distance', () => {
       category: 'HIGH_VOLTAGE',
       now,
       responders: [
-        responder({ responderId: 'close-no-hv', distanceKm: 1, certifiedFor: ['GENERAL'] }),
-        responder({ responderId: 'far-hv', distanceKm: 22, certifiedFor: ['HIGH_VOLTAGE'] }),
+        responder({
+          responderId: 'close-no-hv',
+          distanceKm: 1,
+          certifiedFor: ['GENERAL'],
+        }),
+        responder({
+          responderId: 'far-hv',
+          distanceKm: 22,
+          certifiedFor: ['HIGH_VOLTAGE'],
+        }),
       ],
     });
     expect(r?.chosen.responderId).toBe('far-hv');
@@ -90,7 +108,13 @@ describe('the rule that overrides distance', () => {
       dispatch({
         category: 'HIGH_VOLTAGE',
         now,
-        responders: [responder({ responderId: 'close', distanceKm: 1, certifiedFor: ['GENERAL'] })],
+        responders: [
+          responder({
+            responderId: 'close',
+            distanceKm: 1,
+            certifiedFor: ['GENERAL'],
+          }),
+        ],
       }),
     ).toBeNull();
   });
@@ -144,8 +168,18 @@ describe('breaking a tie', () => {
       category: 'GENERAL',
       now,
       responders: [
-        responder({ responderId: 'loaded', distanceKm: 5, rating: 4, openJobs: 3 }),
-        responder({ responderId: 'free', distanceKm: 5, rating: 4, openJobs: 0 }),
+        responder({
+          responderId: 'loaded',
+          distanceKm: 5,
+          rating: 4,
+          openJobs: 3,
+        }),
+        responder({
+          responderId: 'free',
+          distanceKm: 5,
+          rating: 4,
+          openJobs: 0,
+        }),
       ],
     });
     expect(r?.chosen.responderId).toBe('free');
@@ -158,9 +192,13 @@ describe('breaking a tie', () => {
       responder({ responderId: 'z', distanceKm: 5 }),
       responder({ responderId: 'a', distanceKm: 5 }),
     ];
-    const first = dispatch({ category: 'GENERAL', now, responders: rs })?.chosen.responderId;
-    const second = dispatch({ category: 'GENERAL', now, responders: [...rs].reverse() })
-      ?.chosen.responderId;
+    const first = dispatch({ category: 'GENERAL', now, responders: rs })?.chosen
+      .responderId;
+    const second = dispatch({
+      category: 'GENERAL',
+      now,
+      responders: [...rs].reverse(),
+    })?.chosen.responderId;
     expect(first).toBe(second);
     expect(first).toBe('a');
   });
@@ -168,7 +206,13 @@ describe('breaking a tie', () => {
 
 describe('what happens at the roadside, and what does not', () => {
   it('recovers rather than repairs anything safety-critical or high-voltage', () => {
-    for (const c of ['HIGH_VOLTAGE', 'BRAKES', 'STEERING', 'SUSPENSION', 'TYRES'] as const) {
+    for (const c of [
+      'HIGH_VOLTAGE',
+      'BRAKES',
+      'STEERING',
+      'SUSPENSION',
+      'TYRES',
+    ] as const) {
       expect(requiresRecovery(c)).toBe(true);
     }
   });

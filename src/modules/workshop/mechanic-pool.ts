@@ -101,7 +101,10 @@ export function maySupervise(
  * Throws on the combination that creates the misclassification risk: UZA pricing an
  * independent partner's labour. The partner sets their price; UZA earns a commission.
  */
-export function assertPricingAllowed(m: Mechanic, pricedBy: 'UZA' | 'MECHANIC'): void {
+export function assertPricingAllowed(
+  m: Mechanic,
+  pricedBy: 'UZA' | 'MECHANIC',
+): void {
   if (m.engagement === 'CERTIFIED' && pricedBy === 'UZA') {
     throw new BadRequestException(
       'A certified independent sets their own price; UZA takes a commission. ' +

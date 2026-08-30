@@ -48,8 +48,15 @@ export function assertListingPricingInput(
         );
       }
       break;
-    default:
-      throw new BadRequestException(`Unsupported seller type: ${sellerType}`);
+    default: {
+      // Exhaustiveness guard. If a new seller type is added to the enum, this
+      // assignment stops compiling — which is how the missing pricing branch gets
+      // found at build time rather than by a listing priced at zero.
+      const unhandled: never = sellerType;
+      throw new BadRequestException(
+        `Unsupported seller type: ${String(unhandled)}`,
+      );
+    }
   }
 }
 

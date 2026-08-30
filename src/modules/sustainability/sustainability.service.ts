@@ -197,11 +197,9 @@ export class SustainabilityService {
   }
 
   async reportByFleetClient(clientName: string, filters: FilterImpactDto) {
-    const where = this.buildWhere({
-      ...filters,
-      fleetClientName: clientName,
-    });
-
+    // getAdminOverview builds the same filter from these inputs, so scoping happens
+    // there. This used to build a `where` and discard it, which read as if the scoping
+    // had been forgotten.
     return this.getAdminOverview({ ...filters, fleetClientName: clientName });
   }
 

@@ -84,8 +84,14 @@ export class PricingService {
         return this.calcLocalSeller(input, rule);
       case 'INTERNATIONAL_SELLER':
         return this.calcInternational(input, rule);
-      default:
-        throw new NotFoundException(`Unsupported seller type: ${sellerType}`);
+      default: {
+        // Exhaustiveness guard — see listing-pricing.util.ts. A new seller type
+        // breaks the build here rather than falling through to a 404 in production.
+        const unhandled: never = sellerType;
+        throw new NotFoundException(
+          `Unsupported seller type: ${String(unhandled)}`,
+        );
+      }
     }
   }
 

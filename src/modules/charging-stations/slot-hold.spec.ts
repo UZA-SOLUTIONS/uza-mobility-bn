@@ -15,13 +15,16 @@ import {
   secondsRemaining,
   wasNoShow,
   type DriverRecord,
-  type Hold,
 } from './slot-hold';
 
 const T0 = new Date('2026-08-29T10:00:00Z');
 const at = (mins: number) => new Date(T0.getTime() + mins * 60_000);
 
-const clean: DriverRecord = { uzaId: 'UZA-P-2026-000141', recentHolds: 0, recentNoShows: 0 };
+const clean: DriverRecord = {
+  uzaId: 'UZA-P-2026-000141',
+  recentHolds: 0,
+  recentNoShows: 0,
+};
 
 const place = (over: Partial<Parameters<typeof placeHold>[0]> = {}) =>
   placeHold({
@@ -87,7 +90,9 @@ describe('who may hold what', () => {
   });
 
   it('refuses a connector that is in use or out of service', () => {
-    expect(() => place({ connectorAvailable: false })).toThrow(ConflictException);
+    expect(() => place({ connectorAvailable: false })).toThrow(
+      ConflictException,
+    );
   });
 });
 
@@ -100,19 +105,21 @@ describe('the no-show consequence', () => {
   });
 
   it('shortens the window for a driver who abandons holds', () => {
-    expect(holdMinutesFor({ ...clean, recentHolds: 10, recentNoShows: 5 })).toBe(
-      REDUCED_HOLD_MINUTES,
-    );
+    expect(
+      holdMinutesFor({ ...clean, recentHolds: 10, recentNoShows: 5 }),
+    ).toBe(REDUCED_HOLD_MINUTES);
   });
 
   it('keeps the full window for a driver who mostly turns up', () => {
-    expect(holdMinutesFor({ ...clean, recentHolds: 10, recentNoShows: 2 })).toBe(
-      DEFAULT_HOLD_MINUTES,
-    );
+    expect(
+      holdMinutesFor({ ...clean, recentHolds: 10, recentNoShows: 2 }),
+    ).toBe(DEFAULT_HOLD_MINUTES);
   });
 
   it('shortens the hold in practice, not just in the calculation', () => {
-    const h = place({ driver: { ...clean, recentHolds: 10, recentNoShows: 6 } });
+    const h = place({
+      driver: { ...clean, recentHolds: 10, recentNoShows: 6 },
+    });
     expect(secondsRemaining(h, T0)).toBe(REDUCED_HOLD_MINUTES * 60);
   });
 
@@ -148,7 +155,8 @@ describe('extending', () => {
   it('never extends past the total ceiling', () => {
     // Unlimited extension is squatting with extra steps.
     const e = extendHold(place(), at(14));
-    const totalMinutes = (e.expiresAt.getTime() - e.createdAt.getTime()) / 60_000;
+    const totalMinutes =
+      (e.expiresAt.getTime() - e.createdAt.getTime()) / 60_000;
     expect(totalMinutes).toBeLessThanOrEqual(MAX_TOTAL_HOLD_MINUTES);
   });
 
@@ -166,7 +174,9 @@ describe('arriving, and not arriving', () => {
   });
 
   it('refuses to convert an expired hold, and says the connector may be gone', () => {
-    expect(() => convertToSession(place(), at(20))).toThrow(/may have been taken/);
+    expect(() => convertToSession(place(), at(20))).toThrow(
+      /may have been taken/,
+    );
   });
 
   it('treats cancelling an already-ended hold as a no-op rather than an error', () => {
@@ -178,12 +188,18 @@ describe('arriving, and not arriving', () => {
 describe('what a driver is offered', () => {
   it('hides connectors that are held right now', () => {
     const held = place({ connectorId: 'C2', holdId: 'H2' });
-    expect(availableConnectors(['C1', 'C2', 'C3'], [held], T0)).toEqual(['C1', 'C3']);
+    expect(availableConnectors(['C1', 'C2', 'C3'], [held], T0)).toEqual([
+      'C1',
+      'C3',
+    ]);
   });
 
   it('offers them again the moment the hold lapses', () => {
     const held = place({ connectorId: 'C2', holdId: 'H2' });
-    expect(availableConnectors(['C1', 'C2'], [held], at(16))).toEqual(['C1', 'C2']);
+    expect(availableConnectors(['C1', 'C2'], [held], at(16))).toEqual([
+      'C1',
+      'C2',
+    ]);
   });
 });
 
@@ -192,9 +208,17 @@ describe('what abandoned holds cost the station owner', () => {
     // The number that says whether the window is set correctly — and it is the owner, not
     // UZA, who pays for it being wrong.
     const abandoned = place({ holdId: 'A' });
-    const used = convertToSession(place({ holdId: 'B', connectorId: 'C2' }), at(5));
-    const cancelled = cancelHold(place({ holdId: 'C', connectorId: 'C3' }), at(2));
-    expect(idleMinutesLostToNoShows([abandoned, used, cancelled], at(60))).toBe(15);
+    const used = convertToSession(
+      place({ holdId: 'B', connectorId: 'C2' }),
+      at(5),
+    );
+    const cancelled = cancelHold(
+      place({ holdId: 'C', connectorId: 'C3' }),
+      at(2),
+    );
+    expect(idleMinutesLostToNoShows([abandoned, used, cancelled], at(60))).toBe(
+      15,
+    );
   });
 
   it('is zero when nobody abandoned anything', () => {

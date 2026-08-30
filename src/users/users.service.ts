@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { Prisma } from '@prisma/client';
+import { Prisma, type Seller } from '@prisma/client';
 import { AuditService } from '../common/audit/audit.service';
 import type { RequestAuditContext } from '../common/audit/request-context.util';
 import { PrismaService } from '../prisma/prisma.service';
@@ -424,7 +424,9 @@ export class UsersService {
     auditContext: RequestAuditContext = {},
   ) {
     const channelType = dto.sellerType;
-    let existing;
+    // Annotated because it is assigned in two branches: without this TypeScript
+    // infers `any` and every later read of `existing.id` is unchecked.
+    let existing: Seller | null = null;
 
     if (channelType) {
       existing = await this.prisma.seller.findUnique({

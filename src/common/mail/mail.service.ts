@@ -13,7 +13,20 @@ export interface SendMailInput {
   subject: string;
   html: string;
   text?: string;
-  fileAttachments?: Array<{ filename: string; path: string }>;
+  /*
+   * Attachments are passed by CONTENT, never by path.
+   *
+   * There used to be a `fileAttachments` option taking `{ filename, path }`, which
+   * nodemailer reads straight off the local filesystem. Nothing in the codebase
+   * called it, so it was a dormant file-read primitive: the day somebody wired it to
+   * a request field, an attacker could name any path the API process can read and
+   * have it emailed out.
+   *
+   * A caller that needs to attach a file reads it deliberately and passes the buffer,
+   * which puts the decision about WHICH file at the call site where it can be
+   * reviewed. It also closes the exposure in advisory GHSA nodemailer "raw option
+   * bypasses disableFileAccess", independently of the installed version.
+   */
   bufferAttachments?: Array<{ filename: string; content: Buffer }>;
 }
 
@@ -75,16 +88,10 @@ export class MailService implements OnModuleInit {
       return;
     }
 
-    const attachments = [
-      ...(input.fileAttachments ?? []).map((file) => ({
-        filename: file.filename,
-        path: file.path,
-      })),
-      ...(input.bufferAttachments ?? []).map((file) => ({
-        filename: file.filename,
-        content: file.content,
-      })),
-    ];
+    const attachments = (input.bufferAttachments ?? []).map((file) => ({
+      filename: file.filename,
+      content: file.content,
+    }));
 
     await this.transporter.sendMail({
       from: this.fromAddress,

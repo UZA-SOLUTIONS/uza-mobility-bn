@@ -5,19 +5,26 @@ charging-station commerce and inspections. **NestJS + Prisma + Postgres + MongoD
 
 **102 Prisma models · 22 migrations · 45 controllers · 219 endpoints.**
 
-> ### Read this first: there is no front end
+> ### Read this first: where the front ends are
 >
-> Nothing calls this API. Not in this repository, and not in any of the other eight UZA
-> repositories on the founder's machine. `admin/listings`, `admin/orders`, `admin/invoices`,
-> `admin/parts`, `admin/financing` and eighteen more admin route groups all exist, and
-> **nothing renders any of them.**
+> This repository is the API only. Two applications consume it, both live, and neither is
+> in this repository:
 >
-> This is a complete, working back end waiting for a front end. **Building that front end is
-> the largest and most valuable remaining piece of work in the estate** — it is the only thing
-> standing between a finished API and people actually using it.
+> | | |
+> |---|---|
+> | **[`uza-mobility-fn`](https://github.com/UZA-SOLUTIONS/uza-mobility-fn)** | The customer site at **uzamobility.com** — marketing, vehicles, spare parts, the buyer account area, and the seller and charging-operator workspaces. Next.js |
+> | **[`uza-mobility-admin`](https://github.com/UZA-SOLUTIONS/uza-mobility-admin)** | The staff panel — the `admin/*` route groups below. Next.js |
 >
-> If a front end does exist somewhere not cloned locally, that changes this paragraph
-> entirely, and it is the first question to answer.
+> An earlier revision of this file claimed the platform had no front end. **That was wrong**,
+> and it was wrong because the author did not check the systems register in `uza-nexus`,
+> which had both recorded. The claim is corrected here rather than quietly deleted, because
+> anyone who read the old version made a decision on it.
+>
+> Coverage is genuinely incomplete, which is a different statement: the **lender** portals and
+> the **workshop** portal are on `feat/lender-and-workshop-portals` in `uza-mobility-fn`, and
+> the endpoints they call — `/financing/lenders/*` and `/workshop/*` — **do not exist in this
+> repository yet.** Those screens are built and waiting. Writing those two controllers is the
+> most valuable open work here.
 
 ---
 

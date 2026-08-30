@@ -29,7 +29,6 @@ import {
   BOOKING_PAYABLE_STATUSES,
   BOOKING_VALIDITY_DAYS,
   BUYER_CANCELLABLE_BOOKING_STATUSES,
-  INACTIVE_BOOKING_STATUSES,
 } from './booking.constants';
 import { FilterBookingsDto } from './dto/filter-bookings.dto';
 import { RejectBookingDto } from './dto/reject-booking.dto';

@@ -42,10 +42,12 @@ export class BankFileGeneratorService {
       where: { ref: bankFileRef },
       include: { items: true },
     });
-    if (!file) throw new NotFoundException(`bank file ${bankFileRef} not found`);
+    if (!file)
+      throw new NotFoundException(`bank file ${bankFileRef} not found`);
 
     const generated: string[] = [];
-    const stillMissing: { code: string; source: ItemSource; reason: string }[] = [];
+    const stillMissing: { code: string; source: ItemSource; reason: string }[] =
+      [];
 
     for (const item of file.items) {
       if (item.present) continue;
@@ -53,32 +55,55 @@ export class BankFileGeneratorService {
         stillMissing.push({
           code: item.code,
           source: item.source,
-          reason: item.source === 'external' ? 'must be fetched from a third party' : 'somebody has to obtain and attach it',
+          reason:
+            item.source === 'external'
+              ? 'must be fetched from a third party'
+              : 'somebody has to obtain and attach it',
         });
         continue;
       }
 
       const result = await this.produce(item.code, file.uzaId, file.ref);
       if (result === null) {
-        stillMissing.push({ code: item.code, source: item.source, reason: this.whyNot(item.code) });
+        stillMissing.push({
+          code: item.code,
+          source: item.source,
+          reason: this.whyNot(item.code),
+        });
         continue;
       }
 
       await this.prisma.bankFileItem.update({
         where: { id: item.id },
-        data: { present: true, generatedAt: new Date(), documentUrl: null, queryNote: null },
+        data: {
+          present: true,
+          generatedAt: new Date(),
+          documentUrl: null,
+          queryNote: null,
+        },
       });
       await this.prisma.bankFileEvent.create({
-        data: { bankFileId: file.id, kind: 'item_added', detail: `${item.code} generated` },
+        data: {
+          bankFileId: file.id,
+          kind: 'item_added',
+          detail: `${item.code} generated`,
+        },
       });
       generated.push(item.code);
     }
 
     const ready = stillMissing.length === 0;
     if (ready && file.status === 'building') {
-      await this.prisma.bankFile.update({ where: { id: file.id }, data: { status: 'ready' } });
+      await this.prisma.bankFile.update({
+        where: { id: file.id },
+        data: { status: 'ready' },
+      });
       await this.prisma.bankFileEvent.create({
-        data: { bankFileId: file.id, kind: 'marked_ready', detail: 'every item present' },
+        data: {
+          bankFileId: file.id,
+          kind: 'marked_ready',
+          detail: 'every item present',
+        },
       });
     }
 
@@ -113,7 +138,8 @@ export class BankFileGeneratorService {
       const r = await this.generateForFile(ref);
       itemsGenerated += r.generated.length;
       if (r.readyToSubmit) nowReady += 1;
-      for (const m of r.stillMissing) blockedBy[m.code] = (blockedBy[m.code] ?? 0) + 1;
+      for (const m of r.stillMissing)
+        blockedBy[m.code] = (blockedBy[m.code] ?? 0) + 1;
     }
 
     this.logger.log(
@@ -126,11 +152,18 @@ export class BankFileGeneratorService {
    * One item. Returns null when the underlying fact does not exist yet, which is a real
    * answer and not a failure.
    */
-  private async produce(code: string, uzaId: string, fileRef: string): Promise<true | null> {
+  private async produce(
+    code: string,
+    uzaId: string,
+    fileRef: string,
+  ): Promise<true | null> {
     switch (code) {
       case 'APPLICATION_FORM': {
         // The form is the person's own details. It exists the moment they do.
-        const user = await this.prisma.user.findFirst({ where: { uzaId }, select: { id: true } });
+        const user = await this.prisma.user.findFirst({
+          where: { uzaId },
+          select: { id: true },
+        });
         return user ? true : null;
       }
 
@@ -170,7 +203,10 @@ export class BankFileGeneratorService {
         // A promise of a specific unit, still live. A lapsed or declined allocation is
         // not an allocation.
         const alloc = await this.prisma.allocation.findFirst({
-          where: { queue: { uzaId }, status: { in: ['promised', 'confirmed', 'fulfilled'] } },
+          where: {
+            queue: { uzaId },
+            status: { in: ['promised', 'confirmed', 'fulfilled'] },
+          },
           select: { id: true },
         });
         return alloc ? true : null;
@@ -180,7 +216,10 @@ export class BankFileGeneratorService {
         // Derived from the allocated unit's landed cost and the product terms. Without an
         // allocation there is no vehicle to quote.
         const alloc = await this.prisma.allocation.findFirst({
-          where: { queue: { uzaId }, status: { in: ['promised', 'confirmed', 'fulfilled'] } },
+          where: {
+            queue: { uzaId },
+            status: { in: ['promised', 'confirmed', 'fulfilled'] },
+          },
           select: { unit: { select: { landedCostRwf: true } } },
         });
         return alloc?.unit?.landedCostRwf != null ? true : null;
@@ -196,7 +235,10 @@ export class BankFileGeneratorService {
         });
         if (file?.pricePaidRwf != null) return true;
         const alloc = await this.prisma.allocation.findFirst({
-          where: { queue: { uzaId }, status: { in: ['promised', 'confirmed', 'fulfilled'] } },
+          where: {
+            queue: { uzaId },
+            status: { in: ['promised', 'confirmed', 'fulfilled'] },
+          },
           select: { unit: { select: { landedCostRwf: true } } },
         });
         return alloc?.unit?.landedCostRwf != null ? true : null;
@@ -204,7 +246,9 @@ export class BankFileGeneratorService {
 
       default:
         // An unknown generated code is a bug in the item list, not a missing document.
-        this.logger.warn(`no generator for item code ${code} — it is marked generated but nothing produces it`);
+        this.logger.warn(
+          `no generator for item code ${code} — it is marked generated but nothing produces it`,
+        );
         return null;
     }
   }
@@ -249,17 +293,24 @@ export class BankFileGeneratorService {
       where: { present: false, file: { status: 'building' } },
       _count: { _all: true },
     });
-    const openFiles = await this.prisma.bankFile.count({ where: { status: 'building' } });
+    const openFiles = await this.prisma.bankFile.count({
+      where: { status: 'building' },
+    });
 
     const bySource: Record<string, number> = {};
-    for (const r of rows) bySource[r.source] = (bySource[r.source] ?? 0) + r._count._all;
+    for (const r of rows)
+      bySource[r.source] = (bySource[r.source] ?? 0) + r._count._all;
 
     return {
       openFiles,
       outstanding: rows.reduce((a, r) => a + r._count._all, 0),
       bySource,
       byItem: rows
-        .map((r) => ({ code: r.code, source: r.source, outstanding: r._count._all }))
+        .map((r) => ({
+          code: r.code,
+          source: r.source,
+          outstanding: r._count._all,
+        }))
         .sort((a, b) => b.outstanding - a.outstanding),
     };
   }

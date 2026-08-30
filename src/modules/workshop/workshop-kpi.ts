@@ -89,7 +89,9 @@ export function computeKpis(jobs: readonly CompletedJob[]): WorkshopKpis {
     comebackRate: comebacks.length / n,
     onTimeDeliveryRate: onTime / n,
     medianTurnaroundHours: median(
-      jobs.map((j) => (j.handedOverAt.getTime() - j.receivedAt.getTime()) / 3_600_000),
+      jobs.map(
+        (j) => (j.handedOverAt.getTime() - j.receivedAt.getTime()) / 3_600_000,
+      ),
     ),
     safetyIncidents: jobs.reduce((s, j) => s + j.safetyIncidents, 0),
   };
@@ -122,10 +124,12 @@ export function findComebacks(
       (a, b) => a.handedOverAt.getTime() - b.handedOverAt.getTime(),
     );
     for (let i = 0; i < ordered.length - 1; i++) {
-      const first = ordered[i]!;
-      const next = ordered[i + 1]!;
+      const first = ordered[i];
+      const next = ordered[i + 1];
       const gap = next.receivedAt.getTime() - first.handedOverAt.getTime();
-      const overlaps = next.categories.some((c) => first.categories.includes(c));
+      const overlaps = next.categories.some((c) =>
+        first.categories.includes(c),
+      );
       if (gap >= 0 && gap <= windowMs && overlaps) out.push(first);
     }
   }
@@ -135,7 +139,7 @@ export function findComebacks(
 function median(values: number[]): number {
   const s = [...values].sort((a, b) => a - b);
   const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
 /**
@@ -152,7 +156,10 @@ export const KPI_TARGETS = {
   onTimeDeliveryRate: 0.9,
 } as const;
 
-export function reviewKpis(k: WorkshopKpis): { meetsTargets: boolean; reasons: string[] } {
+export function reviewKpis(k: WorkshopKpis): {
+  meetsTargets: boolean;
+  reasons: string[];
+} {
   const reasons: string[] = [];
   if (k.firstTimeFixRate < KPI_TARGETS.firstTimeFixRate) {
     reasons.push(
@@ -171,7 +178,9 @@ export function reviewKpis(k: WorkshopKpis): { meetsTargets: boolean; reasons: s
   }
   // Not a rate and not averaged. One is one too many, and it is a conversation that day.
   if (k.safetyIncidents > 0) {
-    reasons.push(`${k.safetyIncidents} safety incident(s) — review each one individually.`);
+    reasons.push(
+      `${k.safetyIncidents} safety incident(s) — review each one individually.`,
+    );
   }
   return { meetsTargets: reasons.length === 0, reasons };
 }

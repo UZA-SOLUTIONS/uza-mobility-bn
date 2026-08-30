@@ -60,9 +60,9 @@ describe('quoting a prepayment', () => {
     // a smaller benefit than the headline promises.
     const q = quotePrepayment(PRICE, 50);
     expect(q.discountPercent).toBe(5);
-    expect(q.discountAmount).toBe(105_000);           // 5% of 2,100,000
+    expect(q.discountAmount).toBe(105_000); // 5% of 2,100,000
     expect(q.netPriceAfterDiscount).toBe(1_995_000);
-    expect(q.amountDueNow).toBe(997_500);             // half of the discounted price
+    expect(q.amountDueNow).toBe(997_500); // half of the discounted price
   });
 
   it('at 100% the amount due now is the whole discounted price', () => {
@@ -84,7 +84,11 @@ describe('quoting a prepayment', () => {
     // 7.5% of an odd price is not a whole number. Money must not carry a fraction into a
     // ledger or an invoice.
     const q = quotePrepayment(1_999_999, 75);
-    for (const v of [q.discountAmount, q.netPriceAfterDiscount, q.amountDueNow]) {
+    for (const v of [
+      q.discountAmount,
+      q.netPriceAfterDiscount,
+      q.amountDueNow,
+    ]) {
       expect(Number.isInteger(v)).toBe(true);
     }
   });
@@ -117,7 +121,9 @@ describe('what the discount costs UZA', () => {
 
   it('costs more the sooner the vehicle arrives', () => {
     // Same discount, less time holding the money — a worse deal for UZA, not a better one.
-    expect(annualisedCostPercent(10, 60)).toBeGreaterThan(annualisedCostPercent(10, 120));
+    expect(annualisedCostPercent(10, 60)).toBeGreaterThan(
+      annualisedCostPercent(10, 120),
+    );
   });
 
   it('refuses a nonsensical delivery window rather than returning Infinity', () => {

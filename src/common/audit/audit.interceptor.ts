@@ -48,8 +48,17 @@ export class AuditInterceptor implements NestInterceptor {
     const auditContext = getRequestAuditContext(request);
     const user = request.user as JwtUserPayload | undefined;
 
+    /*
+     * The response body passes through untouched.
+     *
+     * `next.handle()` is `Observable<any>` in @nestjs/common, so `data` arrives
+     * untyped. It is annotated `unknown` because this interceptor never reads it —
+     * it writes an audit row and then hands the body back exactly as received.
+     * Typing it as `unknown` says that, and stops a later edit from quietly
+     * reaching into a response shape it has not checked.
+     */
     return next.handle().pipe(
-      mergeMap((data) =>
+      mergeMap((data: unknown) =>
         from(
           this.auditService.record({
             userId: user?.sub,
@@ -69,8 +78,17 @@ export class AuditInterceptor implements NestInterceptor {
   }
 
   private inferAction(method: string, request: Request): string {
-    const path = (request.route?.path as string | undefined) ?? request.url;
-    return `http:${method}:${path}`;
+    // `request.route` is untyped in @types/express and is absent entirely on a
+    // 404 or a request that never reached a handler. Narrow rather than assert:
+    // the audit log must not be the thing that throws.
+    const route: unknown = (request as { route?: unknown }).route;
+    const routePath =
+      typeof route === 'object' &&
+      route !== null &&
+      typeof (route as { path?: unknown }).path === 'string'
+        ? (route as { path: string }).path
+        : undefined;
+    return `http:${method}:${routePath ?? request.url}`;
   }
 
   private inferEntity(request: Request): string | undefined {

@@ -259,7 +259,7 @@ export class AuthService {
     let payload: Record<string, unknown>;
 
     try {
-      payload = this.jwtService.verify(refreshToken) as Record<string, unknown>;
+      payload = this.jwtService.verify(refreshToken);
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -479,13 +479,25 @@ export class AuthService {
       },
     );
 
-    const refreshPayload = this.jwtService.decode(refreshToken) as Record<
-      string,
-      unknown
-    >;
-    const refreshExpiresAt = new Date(
-      ((refreshPayload?.exp ?? Math.floor(Date.now() / 1000)) as number) * 1000,
-    );
+    /*
+     * `decode()` does not verify and its return type is `any`, so nothing here can
+     * be trusted on shape. We only want `exp`, and only to record when this token
+     * stops being valid — the token itself was just signed by us, so a missing or
+     * malformed `exp` means our own signing options changed, not an attack.
+     *
+     * Falling back to "now" is deliberate: a row that looks already-expired is
+     * cleaned up on the next sweep, whereas defaulting far into the future would
+     * leave a refresh token that outlives its own signature.
+     */
+    const refreshPayload: unknown = this.jwtService.decode(refreshToken);
+    const exp =
+      typeof refreshPayload === 'object' &&
+      refreshPayload !== null &&
+      'exp' in refreshPayload &&
+      typeof refreshPayload.exp === 'number'
+        ? (refreshPayload as { exp: number }).exp
+        : Math.floor(Date.now() / 1000);
+    const refreshExpiresAt = new Date(exp * 1000);
 
     await this.prisma.refreshToken.deleteMany({ where: { userId: user.id } });
     await this.prisma.refreshToken.create({

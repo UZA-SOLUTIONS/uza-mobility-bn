@@ -48,7 +48,7 @@ export class ExchangeRateService {
     let effective = await this.getCachedNumber(
       PLATFORM_SETTING_KEYS.usdToRwfEffective,
     );
-    let fetchedAt = await this.getCachedDate(
+    const fetchedAt = await this.getCachedDate(
       PLATFORM_SETTING_KEYS.rateFetchedAt,
     );
     const markupPercent = await this.getMarkupPercent();

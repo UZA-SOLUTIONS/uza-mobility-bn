@@ -78,8 +78,14 @@ const TRANSITIONS: Record<JobState, readonly JobState[]> = {
 export const isTerminal = (s: JobState): boolean => TRANSITIONS[s].length === 0;
 
 /** Work that must not be signed off without a road test. */
-export const SAFETY_CRITICAL = ['BRAKES', 'STEERING', 'SUSPENSION', 'TYRES'] as const;
-export type WorkCategory = (typeof SAFETY_CRITICAL)[number] | 'HIGH_VOLTAGE' | 'BODY' | 'GENERAL';
+export const SAFETY_CRITICAL = [
+  'BRAKES',
+  'STEERING',
+  'SUSPENSION',
+  'TYRES',
+] as const;
+export type WorkCategory =
+  (typeof SAFETY_CRITICAL)[number] | 'HIGH_VOLTAGE' | 'BODY' | 'GENERAL';
 
 export interface TechnicianCompetence {
   technicianId: string;
@@ -193,7 +199,10 @@ export function needsReauthorisation(
   authorisedTotalMinor: number,
   currentTotalMinor: number,
 ): boolean {
-  if (!Number.isInteger(authorisedTotalMinor) || !Number.isInteger(currentTotalMinor)) {
+  if (
+    !Number.isInteger(authorisedTotalMinor) ||
+    !Number.isInteger(currentTotalMinor)
+  ) {
     throw new BadRequestException('Totals must be integer minor units.');
   }
   return currentTotalMinor > authorisedTotalMinor;

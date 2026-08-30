@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -95,7 +94,7 @@ export class InquiriesService {
       inquiry.id,
       quoteNumber,
       intent,
-      listing as InquiryListingContext,
+      listing,
       {
         name: inquiry.name,
         email: inquiry.email,

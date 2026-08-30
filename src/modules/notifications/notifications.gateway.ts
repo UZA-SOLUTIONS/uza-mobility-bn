@@ -5,7 +5,8 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import type { Server, Socket } from 'socket.io';
+import type { Server } from 'socket.io';
+import type { UzaSocket } from './ws.types';
 import {
   NOTIFICATION_SOCKET_EVENT,
   type NotificationPayload,
@@ -27,7 +28,7 @@ export class NotificationsGateway
 
   constructor(private readonly wsAuth: WsAuthService) {}
 
-  async handleConnection(client: Socket): Promise<void> {
+  async handleConnection(client: UzaSocket): Promise<void> {
     const user = await this.wsAuth.authenticate(client);
 
     if (!user) {
@@ -41,8 +42,8 @@ export class NotificationsGateway
     this.logger.debug(`WS connected: user=${user.sub} socket=${client.id}`);
   }
 
-  handleDisconnect(client: Socket): void {
-    const userId = client.data.userId as string | undefined;
+  handleDisconnect(client: UzaSocket): void {
+    const userId = client.data.userId;
     if (userId) {
       this.logger.debug(`WS disconnected: user=${userId} socket=${client.id}`);
     }

@@ -14,7 +14,9 @@ const now = new Date('2026-08-29');
 const valid = new Date('2027-01-01');
 const expired = new Date('2026-01-01');
 
-const mech = (over: Partial<Mechanic> & Pick<Mechanic, 'mechanicId'>): Mechanic => ({
+const mech = (
+  over: Partial<Mechanic> & Pick<Mechanic, 'mechanicId'>,
+): Mechanic => ({
   uzaId: `UZA-P-2026-${over.mechanicId}`,
   engagement: 'EMPLOYED',
   level: 'TECHNICIAN',
@@ -26,7 +28,9 @@ const mech = (over: Partial<Mechanic> & Pick<Mechanic, 'mechanicId'>): Mechanic 
 
 describe('who may work unsupervised', () => {
   it('allows a certified technician on a category they hold', () => {
-    expect(mayWorkUnsupervised(mech({ mechanicId: 'a' }), 'GENERAL', now)).toBe(true);
+    expect(mayWorkUnsupervised(mech({ mechanicId: 'a' }), 'GENERAL', now)).toBe(
+      true,
+    );
   });
 
   it('never allows an apprentice, however well certified', () => {
@@ -41,15 +45,25 @@ describe('who may work unsupervised', () => {
   });
 
   it('refuses a category the person is not certified for', () => {
-    expect(mayWorkUnsupervised(mech({ mechanicId: 'b' }), 'HIGH_VOLTAGE', now)).toBe(false);
+    expect(
+      mayWorkUnsupervised(mech({ mechanicId: 'b' }), 'HIGH_VOLTAGE', now),
+    ).toBe(false);
   });
 
   it('refuses an expired certificate, and a suspended partner', () => {
     expect(
-      mayWorkUnsupervised(mech({ mechanicId: 'c', certifiedUntil: expired }), 'GENERAL', now),
+      mayWorkUnsupervised(
+        mech({ mechanicId: 'c', certifiedUntil: expired }),
+        'GENERAL',
+        now,
+      ),
     ).toBe(false);
     expect(
-      mayWorkUnsupervised(mech({ mechanicId: 'd', suspendedAt: now }), 'GENERAL', now),
+      mayWorkUnsupervised(
+        mech({ mechanicId: 'd', suspendedAt: now }),
+        'GENERAL',
+        now,
+      ),
     ).toBe(false);
   });
 
@@ -69,7 +83,11 @@ describe('who may work unsupervised', () => {
 describe('supervision', () => {
   it('requires seniority AND certification in the thing being supervised', () => {
     // Supervising work you are not certified for is not supervision, it is company.
-    const seniorNoHv = mech({ mechanicId: 's', level: 'SENIOR', certifiedFor: ['GENERAL'] });
+    const seniorNoHv = mech({
+      mechanicId: 's',
+      level: 'SENIOR',
+      certifiedFor: ['GENERAL'],
+    });
     expect(maySupervise(seniorNoHv, 'GENERAL', now)).toBe(true);
     expect(maySupervise(seniorNoHv, 'HIGH_VOLTAGE', now)).toBe(false);
   });
@@ -94,25 +112,38 @@ describe('who prices the labour — the misclassification guard', () => {
     // Set their price, schedule their day and pay them per job, and it is employment in
     // substance whatever the contract says.
     const partner = mech({ mechanicId: 'p', engagement: 'CERTIFIED' });
-    expect(() => assertPricingAllowed(partner, 'UZA')).toThrow(BadRequestException);
-    expect(() => assertPricingAllowed(partner, 'UZA')).toThrow(/employment relationship/);
+    expect(() => assertPricingAllowed(partner, 'UZA')).toThrow(
+      BadRequestException,
+    );
+    expect(() => assertPricingAllowed(partner, 'UZA')).toThrow(
+      /employment relationship/,
+    );
   });
 
   it('lets an independent set their own price', () => {
     expect(() =>
-      assertPricingAllowed(mech({ mechanicId: 'p2', engagement: 'CERTIFIED' }), 'MECHANIC'),
+      assertPricingAllowed(
+        mech({ mechanicId: 'p2', engagement: 'CERTIFIED' }),
+        'MECHANIC',
+      ),
     ).not.toThrow();
   });
 
   it('refuses an employed technician setting their own price', () => {
     expect(() =>
-      assertPricingAllowed(mech({ mechanicId: 'e', engagement: 'EMPLOYED' }), 'MECHANIC'),
+      assertPricingAllowed(
+        mech({ mechanicId: 'e', engagement: 'EMPLOYED' }),
+        'MECHANIC',
+      ),
     ).toThrow(BadRequestException);
   });
 
   it('lets UZA price its own employee’s work', () => {
     expect(() =>
-      assertPricingAllowed(mech({ mechanicId: 'e2', engagement: 'EMPLOYED' }), 'UZA'),
+      assertPricingAllowed(
+        mech({ mechanicId: 'e2', engagement: 'EMPLOYED' }),
+        'UZA',
+      ),
     ).not.toThrow();
   });
 });
@@ -120,14 +151,25 @@ describe('who prices the labour — the misclassification guard', () => {
 describe('offering a job to the pool', () => {
   const pool = [
     mech({ mechanicId: 'emp-hv', certifiedFor: ['HIGH_VOLTAGE'] }),
-    mech({ mechanicId: 'partner-hv', engagement: 'CERTIFIED', certifiedFor: ['HIGH_VOLTAGE'] }),
+    mech({
+      mechanicId: 'partner-hv',
+      engagement: 'CERTIFIED',
+      certifiedFor: ['HIGH_VOLTAGE'],
+    }),
     mech({ mechanicId: 'emp-gen' }),
-    mech({ mechanicId: 'apprentice', level: 'APPRENTICE', certifiedFor: ['HIGH_VOLTAGE'] }),
+    mech({
+      mechanicId: 'apprentice',
+      level: 'APPRENTICE',
+      certifiedFor: ['HIGH_VOLTAGE'],
+    }),
   ];
 
   it('offers HV work to everyone certified, employed or partner', () => {
     const out = eligibleForJob(pool, { category: 'HIGH_VOLTAGE', now });
-    expect(out.map((m) => m.mechanicId).sort()).toEqual(['emp-hv', 'partner-hv']);
+    expect(out.map((m) => m.mechanicId).sort()).toEqual([
+      'emp-hv',
+      'partner-hv',
+    ]);
   });
 
   it('restricts to employees when UZA has warranted the work to a lender', () => {
@@ -168,22 +210,33 @@ describe('certifications expiring', () => {
     // looks like a software bug.
     // `later` is 64 days out, so a 30-day window correctly excludes it. A 90-day one
     // includes both, soonest first — which is the ordering renewal scheduling depends on.
-    expect(expiringSoon(pool, 30, now).map((m) => m.mechanicId)).toEqual(['soon']);
-    expect(expiringSoon(pool, 90, now).map((m) => m.mechanicId)).toEqual(['soon', 'later']);
+    expect(expiringSoon(pool, 30, now).map((m) => m.mechanicId)).toEqual([
+      'soon',
+    ]);
+    expect(expiringSoon(pool, 90, now).map((m) => m.mechanicId)).toEqual([
+      'soon',
+      'later',
+    ]);
   });
 
   it('excludes those already expired — that is a different list and a different action', () => {
-    expect(expiringSoon(pool, 30, now).some((m) => m.mechanicId === 'already-expired')).toBe(
-      false,
-    );
+    expect(
+      expiringSoon(pool, 30, now).some(
+        (m) => m.mechanicId === 'already-expired',
+      ),
+    ).toBe(false);
   });
 
   it('excludes suspended partners', () => {
-    expect(expiringSoon(pool, 30, now).some((m) => m.mechanicId === 'suspended')).toBe(false);
+    expect(
+      expiringSoon(pool, 30, now).some((m) => m.mechanicId === 'suspended'),
+    ).toBe(false);
   });
 
   it('narrows as the window narrows', () => {
-    expect(expiringSoon(pool, 14, now).map((m) => m.mechanicId)).toEqual(['soon']);
+    expect(expiringSoon(pool, 14, now).map((m) => m.mechanicId)).toEqual([
+      'soon',
+    ]);
     expect(expiringSoon(pool, 1, now)).toEqual([]);
   });
 
@@ -195,9 +248,14 @@ describe('certifications expiring', () => {
 describe('isCertificationCurrent', () => {
   it('is false for suspended and for expired, true otherwise', () => {
     expect(isCertificationCurrent(mech({ mechanicId: 'ok' }), now)).toBe(true);
-    expect(isCertificationCurrent(mech({ mechanicId: 'x', certifiedUntil: expired }), now)).toBe(
-      false,
-    );
-    expect(isCertificationCurrent(mech({ mechanicId: 'y', suspendedAt: now }), now)).toBe(false);
+    expect(
+      isCertificationCurrent(
+        mech({ mechanicId: 'x', certifiedUntil: expired }),
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      isCertificationCurrent(mech({ mechanicId: 'y', suspendedAt: now }), now),
+    ).toBe(false);
   });
 });

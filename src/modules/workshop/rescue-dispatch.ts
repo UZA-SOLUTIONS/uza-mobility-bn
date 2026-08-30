@@ -83,7 +83,11 @@ export function dispatch(req: DispatchRequest): DispatchResult | null {
   const ranked = [...eligible].sort(compare);
   const [chosen, ...alternatives] = ranked;
 
-  return { chosen: chosen!, alternatives, reason: reasonFor(chosen!, req.category) };
+  return {
+    chosen: chosen,
+    alternatives,
+    reason: reasonFor(chosen, req.category),
+  };
 }
 
 /**
@@ -94,7 +98,8 @@ export function dispatch(req: DispatchRequest): DispatchResult | null {
  * same query see different "best" responders, and neither can explain their screen.
  */
 function compare(a: Responder, b: Responder): number {
-  if (Math.abs(a.distanceKm - b.distanceKm) > TIE_KM) return a.distanceKm - b.distanceKm;
+  if (Math.abs(a.distanceKm - b.distanceKm) > TIE_KM)
+    return a.distanceKm - b.distanceKm;
   if (a.rating !== b.rating) return b.rating - a.rating;
   if (a.openJobs !== b.openJobs) return a.openJobs - b.openJobs;
   return a.responderId.localeCompare(b.responderId);
@@ -114,9 +119,14 @@ function reasonFor(r: Responder, category: WorkCategory): string {
  * invoices the partner for the referral. **UZA is not in the payment path** — the same rule
  * that governs the wallet, for the same reason.
  */
-export function referralCommission(jobValueMinor: number, ratePercent: number): number {
+export function referralCommission(
+  jobValueMinor: number,
+  ratePercent: number,
+): number {
   if (!Number.isInteger(jobValueMinor) || jobValueMinor < 0) {
-    throw new BadRequestException('jobValueMinor must be a non-negative integer of minor units');
+    throw new BadRequestException(
+      'jobValueMinor must be a non-negative integer of minor units',
+    );
   }
   if (!Number.isFinite(ratePercent) || ratePercent < 0 || ratePercent > 100) {
     throw new BadRequestException('ratePercent must be between 0 and 100');
@@ -132,6 +142,7 @@ export function referralCommission(jobValueMinor: number, ratePercent: number): 
  */
 export function requiresRecovery(category: WorkCategory): boolean {
   return (
-    category === 'HIGH_VOLTAGE' || (SAFETY_CRITICAL as readonly string[]).includes(category)
+    category === 'HIGH_VOLTAGE' ||
+    (SAFETY_CRITICAL as readonly string[]).includes(category)
   );
 }

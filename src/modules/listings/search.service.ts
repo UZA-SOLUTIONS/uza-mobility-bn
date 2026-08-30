@@ -3,7 +3,6 @@ import { ListingStatus, Prisma } from '@prisma/client';
 import {
   PUBLIC_BROWSE_STATUSES,
   PUBLIC_CURATED_STATUSES,
-  PUBLIC_MARKETPLACE_STATUSES,
 } from './listings.constants';
 import { FilterListingsDto, SortOption } from './dto/filter-listings.dto';
 

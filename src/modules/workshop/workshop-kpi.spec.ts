@@ -10,7 +10,9 @@ import {
 
 const day = (d: number, h = 9) => new Date(Date.UTC(2026, 7, d, h));
 
-const done = (over: Partial<CompletedJob> & Pick<CompletedJob, 'jobRef'>): CompletedJob => ({
+const done = (
+  over: Partial<CompletedJob> & Pick<CompletedJob, 'jobRef'>,
+): CompletedJob => ({
   vin: 'VIN-1',
   categories: ['GENERAL'],
   receivedAt: day(1, 8),
@@ -48,14 +50,22 @@ describe('comebacks — the metric that gets worse when work is rushed', () => {
     // about the work done then. Counting the second visit would measure how often customers
     // return, which is a different and much less useful number.
     const first = done({ jobRef: 'first', handedOverAt: day(1, 16) });
-    const second = done({ jobRef: 'second', receivedAt: day(10, 8), handedOverAt: day(10, 16) });
+    const second = done({
+      jobRef: 'second',
+      receivedAt: day(10, 8),
+      handedOverAt: day(10, 16),
+    });
     const back = findComebacks([first, second]);
     expect(back.map((j) => j.jobRef)).toEqual(['first']);
   });
 
   it('does not count a return for DIFFERENT work', () => {
     // Coming back for brakes after a service is a new job, not a failure of the service.
-    const a = done({ jobRef: 'service', categories: ['GENERAL'], handedOverAt: day(1, 16) });
+    const a = done({
+      jobRef: 'service',
+      categories: ['GENERAL'],
+      handedOverAt: day(1, 16),
+    });
     const b = done({
       jobRef: 'brakes',
       categories: ['BRAKES'],
@@ -67,14 +77,23 @@ describe('comebacks — the metric that gets worse when work is rushed', () => {
 
   it('does not count a return outside the window', () => {
     const a = done({ jobRef: 'a', handedOverAt: day(1, 16) });
-    const b = done({ jobRef: 'b', receivedAt: day(25, 8), handedOverAt: day(25, 16) });
+    const b = done({
+      jobRef: 'b',
+      receivedAt: day(25, 8),
+      handedOverAt: day(25, 16),
+    });
     expect(findComebacks([a, b], 10)).toEqual([]);
     expect(findComebacks([a, b], 30).map((j) => j.jobRef)).toEqual(['a']);
   });
 
   it('keeps different vehicles separate', () => {
     const a = done({ jobRef: 'a', vin: 'VIN-1', handedOverAt: day(1, 16) });
-    const b = done({ jobRef: 'b', vin: 'VIN-2', receivedAt: day(2, 8), handedOverAt: day(2, 16) });
+    const b = done({
+      jobRef: 'b',
+      vin: 'VIN-2',
+      receivedAt: day(2, 8),
+      handedOverAt: day(2, 16),
+    });
     expect(findComebacks([a, b])).toEqual([]);
   });
 
@@ -96,7 +115,11 @@ describe('first-time fix', () => {
     // QC passing and the fault recurring are different failures. Both mean it was not
     // finished first time.
     const first = done({ jobRef: 'first', handedOverAt: day(1, 16) });
-    const second = done({ jobRef: 'second', receivedAt: day(5, 8), handedOverAt: day(5, 16) });
+    const second = done({
+      jobRef: 'second',
+      receivedAt: day(5, 8),
+      handedOverAt: day(5, 16),
+    });
     const k = computeKpis([first, second]);
     expect(k.firstTimeFixRate).toBe(0.5);
     expect(k.comebackRate).toBe(0.5);
@@ -106,9 +129,19 @@ describe('first-time fix', () => {
 describe('turnaround', () => {
   it('reports the MEDIAN, so one recovery job does not distort the month', () => {
     const k = computeKpis([
-      done({ jobRef: '1', receivedAt: day(1, 8), handedOverAt: day(1, 10) }),  // 2h
-      done({ jobRef: '2', vin: 'V2', receivedAt: day(1, 8), handedOverAt: day(1, 12) }), // 4h
-      done({ jobRef: '3', vin: 'V3', receivedAt: day(1, 8), handedOverAt: day(20, 8) }), // 456h
+      done({ jobRef: '1', receivedAt: day(1, 8), handedOverAt: day(1, 10) }), // 2h
+      done({
+        jobRef: '2',
+        vin: 'V2',
+        receivedAt: day(1, 8),
+        handedOverAt: day(1, 12),
+      }), // 4h
+      done({
+        jobRef: '3',
+        vin: 'V3',
+        receivedAt: day(1, 8),
+        handedOverAt: day(20, 8),
+      }), // 456h
     ]);
     expect(k.medianTurnaroundHours).toBe(4);
   });
@@ -121,14 +154,24 @@ describe('what this file deliberately does NOT measure', () => {
     // there." Every metric here improves by doing the work properly; none improves by doing
     // more of it. jobsCompleted is a denominator, not a target.
     const keys = Object.keys(computeKpis([done({ jobRef: 'x' })]));
-    for (const forbidden of ['revenue', 'hoursBilled', 'jobsPerDay', 'utilisation']) {
-      expect(keys.some((k) => k.toLowerCase().includes(forbidden.toLowerCase()))).toBe(false);
+    for (const forbidden of [
+      'revenue',
+      'hoursBilled',
+      'jobsPerDay',
+      'utilisation',
+    ]) {
+      expect(
+        keys.some((k) => k.toLowerCase().includes(forbidden.toLowerCase())),
+      ).toBe(false);
     }
   });
 });
 
 describe('the review', () => {
-  const good = computeKpis([done({ jobRef: 'a' }), done({ jobRef: 'b', vin: 'V2' })]);
+  const good = computeKpis([
+    done({ jobRef: 'a' }),
+    done({ jobRef: 'b', vin: 'V2' }),
+  ]);
 
   it('passes a clean month', () => {
     expect(reviewKpis(good).meetsTargets).toBe(true);

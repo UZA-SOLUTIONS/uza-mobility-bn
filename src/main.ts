@@ -22,7 +22,11 @@ function corsOrigins(config: ConfigService): string[] {
   if (configured.length > 0) return configured;
 
   // Nothing configured: assume local development and allow only localhost.
-  return ['http://localhost:5173', 'http://localhost:3001', 'http://localhost:3002'];
+  return [
+    'http://localhost:5173',
+    'http://localhost:3001',
+    'http://localhost:3002',
+  ];
 }
 
 async function bootstrap() {
@@ -68,29 +72,50 @@ async function bootstrap() {
   // Swagger publishes every endpoint, every DTO and every field name. That is exactly what
   // a developer wants and exactly what an attacker wants, so it is off in production unless
   // somebody turns it on deliberately.
-  const docsEnabled = !isProduction || config.get<string>('ENABLE_SWAGGER') === 'true';
+  const docsEnabled =
+    !isProduction || config.get<string>('ENABLE_SWAGGER') === 'true';
   if (docsEnabled) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('UZA Mobility API')
       .setDescription('Backend API for UZA Mobility')
       .setVersion('1.0')
       .addBearerAuth(
-        { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', name: 'Authorization', in: 'header' },
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'Authorization',
+          in: 'header',
+        },
         'JWT-access',
       )
       .addBearerAuth(
-        { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', name: 'Authorization', in: 'header' },
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'Authorization',
+          in: 'header',
+        },
         'JWT-refresh',
       )
       .build();
-    SwaggerModule.setup('/api/docs', app, SwaggerModule.createDocument(app, swaggerConfig));
+    SwaggerModule.setup(
+      '/api/docs',
+      app,
+      SwaggerModule.createDocument(app, swaggerConfig),
+    );
   }
 
   const port = config.get<number>('PORT', 7000);
   await app.listen(port);
 
   console.log(`Server listening on http://localhost:${port}`);
-  console.log(docsEnabled ? `Swagger docs: http://localhost:${port}/api/docs` : 'Swagger docs: disabled');
+  console.log(
+    docsEnabled
+      ? `Swagger docs: http://localhost:${port}/api/docs`
+      : 'Swagger docs: disabled',
+  );
 }
 
 void bootstrap();
