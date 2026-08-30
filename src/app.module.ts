@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuditModule } from './common/audit/audit.module';
@@ -41,6 +43,17 @@ import { MongoModule } from './mongo/mongo.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    // Rate limiting. Two named windows rather than one, because the right limit for
+    // browsing listings is far too generous for a login form: 100 attempts a minute is
+    // normal traffic on a catalogue and a brute-force attack on a password.
+    //
+    // Applied globally by ThrottlerGuard below. Routes that need the strict window opt in
+    // with @Throttle({ auth: { limit: 5, ttl: 60000 } }) — start with auth/login,
+    // auth/register, forgot-password and reset-password.
+    ThrottlerModule.forRoot([
+      { name: 'default', ttl: 60_000, limit: 120 },
+      { name: 'auth', ttl: 60_000, limit: 5 },
+    ]),
     MongoModule,
     UploadsModule,
     PdfModule,
@@ -72,6 +85,9 @@ import { MongoModule } from './mongo/mongo.module';
   ],
   controllers: [AppController],
   providers: [
+    // Global. Every route gets the 'default' window; the strict 'auth' window is opted
+    // into per route with @Throttle, because a limit that hurts nobody protects nobody.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     AppService,
     {
       provide: APP_INTERCEPTOR,
