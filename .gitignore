@@ -64,3 +64,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 !/storage/README.md
 
 .env.prod
+
+# Front end is its own project
+frontend/node_modules/
+frontend/dist/
+frontend/.env

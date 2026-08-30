@@ -1,0 +1,55 @@
+@import 'tailwindcss';
+
+/*
+ * The design tokens. Components reference these, never raw hex, so a rebrand is
+ * this block and nothing else.
+ */
+@theme {
+  --color-ground: #f7f8f7;
+  --color-surface: #ffffff;
+  --color-line: #e3e6e3;
+  --color-ink: #14201a;
+  --color-ink-soft: #5c6b63;
+
+  /* UZA green, and the one accent that carries state. */
+  --color-brand: #0f6b45;
+  --color-brand-soft: #e6f2ec;
+
+  --color-good: #1c7c4a;
+  --color-warn: #a56a08;
+  --color-bad: #a32820;
+
+  /* One accent per portal, so each reads as a distinct place. */
+  --color-accent-client: #0f6b45;
+  --color-accent-lender: #1d4e89;
+  --color-accent-workshop: #8a4b12;
+  --color-accent-charging: #0d6a72;
+  --color-accent-ops: #4a3b8c;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-ground: #0d1411;
+    --color-surface: #141d19;
+    --color-line: #263029;
+    --color-ink: #eaf0ec;
+    --color-ink-soft: #9aa9a1;
+    --color-brand: #3fa87a;
+    --color-brand-soft: #16302425;
+  }
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers in a column must line up. Money that does not is money nobody trusts. */
+.tabular { font-variant-numeric: tabular-nums; }
+
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }

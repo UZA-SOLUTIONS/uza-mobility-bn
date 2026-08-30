@@ -50,10 +50,18 @@ import { MongoModule } from './mongo/mongo.module';
     // Applied globally by ThrottlerGuard below. Routes that need the strict window opt in
     // with @Throttle({ auth: { limit: 5, ttl: 60000 } }) — start with auth/login,
     // auth/register, forgot-password and reset-password.
-    ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60_000, limit: 120 },
-      { name: 'auth', ttl: 60_000, limit: 5 },
-    ]),
+    /*
+     * One global window, deliberately.
+     *
+     * Every named definition passed here applies to EVERY route — a second, tighter
+     * definition does not sit dormant waiting to be opted into, it throttles the whole
+     * API at the tighter limit. That mistake reduced the entire platform to five
+     * requests a minute and was only visible by loading a real page.
+     *
+     * So the global ceiling is the ordinary one, and the six brute-forceable auth
+     * routes override it in place with `@Throttle({ default: { limit: 5, ... } })`.
+     */
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
     MongoModule,
     UploadsModule,
     PdfModule,

@@ -59,7 +59,7 @@ export class AuthController {
     private readonly storage: StorageService,
   ) {}
 
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
   @Public()
   @SkipAudit()
@@ -69,7 +69,7 @@ export class AuthController {
     return this.authService.register(dto, getRequestAuditContext(request));
   }
 
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
   @Public()
   @SkipAudit()
@@ -166,7 +166,7 @@ export class AuthController {
     );
   }
 
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('admin/login')
   @Public()
   @SkipAudit()
@@ -176,7 +176,7 @@ export class AuthController {
     return this.authService.loginAdmin(dto, getRequestAuditContext(request));
   }
 
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('forgot-password')
   @Public()
   @SkipAudit()
@@ -186,7 +186,7 @@ export class AuthController {
     return this.authService.forgotPassword(dto.email);
   }
 
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('reset-password')
   @Public()
   @SkipAudit()
@@ -196,7 +196,7 @@ export class AuthController {
     return this.authService.resetPassword(dto.token, dto.password);
   }
 
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('verify-email')
   @Public()
   @SkipAudit()
