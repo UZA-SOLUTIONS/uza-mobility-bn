@@ -3139,10 +3139,15 @@ model FinanceProduct {
   /// Floor on the client's own contribution regardless of percentage, in whole RWF.
   minContributionRwf BigInt?
 
-  /// The interest rate is deliberately NOT stored on the client-facing product. The
-  /// founder's rule stands: a borrower is shown what they pay per day over three years
-  /// or five, never a percentage. The rate lives with the lender's own schedule, and
-  /// anything that needs it computes from the instalment.
+  /// The interest rate is deliberately NOT a column here, and it is still never shown to
+  /// a borrower — the founder's rule stands: a driver is told what they pay per day over
+  /// three years or five, never a percentage.
+  ///
+  /// But the rate has to EXIST to compute that daily figure, and it is not one number.
+  /// Unguka charges 34% a year to three years and 36% for four and five, so a single
+  /// stored rate is wrong for half the tenors on offer. Hence `rateBands` below.
+  rateBands FinanceProductRateBand[]
+
   version       Int       @default(1)
   effectiveFrom DateTime
   effectiveTo   DateTime?
@@ -3156,6 +3161,34 @@ model FinanceProduct {
   @@index([classId, active])
   @@index([lenderName])
   @@map("finance_products")
+}
+
+/// One interest band of a lender's schedule: a rate that applies up to a given tenor.
+///
+/// A separate table rather than two columns on the product, because the number of bands
+/// is the lender's decision, not ours. Unguka has two (34% to 36 months, 36% to 60).
+/// BK GO EV has two at different boundaries. A lender with one flat rate has one row.
+///
+/// Bands are read as "the lowest `maxTenorMonths` that still covers the requested tenor",
+/// so they must not overlap. `resolveAnnualRateBps()` enforces that and refuses a tenor
+/// no band covers rather than silently applying the highest — quoting a driver a rate the
+/// lender never agreed to is worse than refusing to quote.
+model FinanceProductRateBand {
+  id        String @id @default(cuid())
+  productId String
+
+  /// Inclusive upper bound of the tenor this rate covers, in months. 36 = "up to 3 years".
+  maxTenorMonths Int
+
+  /// Annual nominal rate in basis points. 3400 = 34.00%. Integer, because money maths on
+  /// a float drifts and a loan schedule is the last place that should happen.
+  annualRateBps Int
+
+  product FinanceProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, maxTenorMonths])
+  @@index([productId])
+  @@map("finance_product_rate_bands")
 }
 
 /// How a battery is held for a given product. Only meaningful where the class allows it.
