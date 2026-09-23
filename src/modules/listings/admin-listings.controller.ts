@@ -260,6 +260,30 @@ export class AdminListingsController {
     );
   }
 
+  @Patch(':id/sold')
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({
+    summary: 'Mark listing as sold (status → SOLD, administrator only)',
+  })
+  markSold(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.requireAdmin(request, (userId, ctx) =>
+      this.listingsService.adminMarkSold(id, userId, ctx),
+    );
+  }
+
+  @Patch(':id/unsold')
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({
+    summary: 'Put sold listing back on sale (status → PUBLISHED, administrator only)',
+  })
+  unmarkSold(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.requireAdmin(request, (userId, ctx) =>
+      this.listingsService.adminUnmarkSold(id, userId, ctx),
+    );
+  }
+
   @Patch(':id/reject')
   @UseGuards(RolesGuard)
   @Roles('SUPER_ADMIN')

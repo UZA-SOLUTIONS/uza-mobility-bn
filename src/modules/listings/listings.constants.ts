@@ -7,16 +7,18 @@ export const PUBLIC_MARKETPLACE_STATUSES: ListingStatus[] = [
   ListingStatus.SOLD,
 ];
 
-/** Marketplace browse/search — available inventory only (sold hidden). */
+/** Marketplace browse/search — published inventory, including sold (sold mark on cards). */
 export const PUBLIC_BROWSE_STATUSES: ListingStatus[] = [
   ListingStatus.PUBLISHED,
   ListingStatus.RESERVED,
+  ListingStatus.SOLD,
 ];
 
-/** Homepage curated sections — active inventory only (not sold). */
+/** Homepage curated sections — same inventory as browse, including sold. */
 export const PUBLIC_CURATED_STATUSES: ListingStatus[] = [
   ListingStatus.PUBLISHED,
   ListingStatus.RESERVED,
+  ListingStatus.SOLD,
 ];
 
 export const ADMIN_ONLY_SELLER_TYPES: SellerType[] = [

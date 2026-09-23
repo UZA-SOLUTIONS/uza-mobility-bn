@@ -8,7 +8,7 @@ export const ALLOWED_TRANSITIONS: Record<ListingStatus, ListingStatus[]> = {
   RESERVED: ['PUBLISHED', 'SOLD'],
   REJECTED: ['DRAFT'],
   SUSPENDED: ['PUBLISHED'],
-  SOLD: ['ARCHIVED'],
+  SOLD: ['PUBLISHED', 'ARCHIVED'],
   EXPIRED: ['DRAFT'],
   ARCHIVED: [],
 };

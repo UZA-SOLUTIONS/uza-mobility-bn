@@ -1190,6 +1190,53 @@ export class ListingsService {
     );
   }
 
+  async adminMarkSold(
+    listingId: string,
+    adminUserId: string,
+    auditContext: RequestAuditContext = {},
+  ) {
+    return this.transitionListing(
+      listingId,
+      ListingStatus.SOLD,
+      adminUserId,
+      'listings:sold',
+      auditContext,
+    );
+  }
+
+  async adminUnmarkSold(
+    listingId: string,
+    adminUserId: string,
+    auditContext: RequestAuditContext = {},
+  ) {
+    const listing = await this.getListingOrThrow(listingId);
+    this.assertTransition(listing.status, ListingStatus.PUBLISHED);
+
+    const updated = await this.prisma.listing.update({
+      where: { id: listingId },
+      data: {
+        status: ListingStatus.PUBLISHED,
+        publishedAt: listing.publishedAt ?? new Date(),
+      },
+      include: adminListingInclude,
+    });
+
+    await this.auditService.record({
+      userId: adminUserId,
+      action: 'listings:unsold',
+      entity: 'Listing',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        email: auditContext.actorEmail,
+        slug: updated.slug,
+        status: ListingStatus.PUBLISHED,
+      },
+    });
+
+    return toAdminListing(updated);
+  }
+
   async adminReject(
     listingId: string,
     adminUserId: string,
