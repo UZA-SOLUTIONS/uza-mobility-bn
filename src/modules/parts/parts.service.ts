@@ -27,6 +27,9 @@ import { toPublicPart, toSellerPart } from './part.mapper';
 import type { PreviewPartPricingDto } from './dto/preview-part-pricing.dto';
 import type { RejectPartDto } from './dto/reject-part.dto';
 
+/** Safety ceiling when `all=true` on public parts browse. */
+const PUBLIC_PARTS_BROWSE_ALL_MAX = 2000;
+
 @Injectable()
 export class PartsService {
   constructor(
@@ -417,7 +420,8 @@ export class PartsService {
       ? { isActive: true, status: PartStatus.APPROVED }
       : {};
 
-    if (filters.status) {
+    // Public browse must stay APPROVED-only; never let ?status= override that.
+    if (!publicOnly && filters.status) {
       where.status = filters.status;
     }
 
@@ -459,6 +463,31 @@ export class PartsService {
     where: Prisma.PartWhereInput,
     filters: FilterPartsDto,
   ) {
+    if (filters.all) {
+      const total = await this.prisma.part.count({ where });
+      if (total > PUBLIC_PARTS_BROWSE_ALL_MAX) {
+        throw new BadRequestException(
+          `Too many results to return at once (max ${PUBLIC_PARTS_BROWSE_ALL_MAX}). Use page and limit instead.`,
+        );
+      }
+
+      const rows = await this.prisma.part.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        include: { photos: true },
+      });
+
+      return {
+        items: rows.map(toPublicPart),
+        meta: {
+          total,
+          page: 1,
+          limit: total,
+          totalPages: 1,
+        },
+      };
+    }
+
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 24;
     const skip = (page - 1) * limit;
@@ -466,7 +495,7 @@ export class PartsService {
     const [rows, total] = await Promise.all([
       this.prisma.part.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { updatedAt: 'desc' },
         skip,
         take: limit,
         include: { photos: true },

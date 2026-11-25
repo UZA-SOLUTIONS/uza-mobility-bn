@@ -21,6 +21,9 @@ export const PUBLIC_CURATED_STATUSES: ListingStatus[] = [
   ListingStatus.SOLD,
 ];
 
+/** Safety ceiling when `all=true` on public browse (marketplace catalogs stay well under this). */
+export const PUBLIC_BROWSE_ALL_MAX = 2000;
+
 export const ADMIN_ONLY_SELLER_TYPES: SellerType[] = [
   SellerType.UZA_RWANDA_STOCK,
   SellerType.UZA_CHINA_SOURCING,

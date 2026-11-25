@@ -41,6 +41,7 @@ import {
 import { marketplaceSellerFilter } from '../sellers/seller-profile.util';
 import {
   ADMIN_ONLY_SELLER_TYPES,
+  PUBLIC_BROWSE_ALL_MAX,
   PUBLIC_MARKETPLACE_STATUSES,
   adminListingInclude,
   publicListingInclude,
@@ -199,17 +200,44 @@ export class ListingsService {
   }
 
   async browse(filters: FilterListingsDto) {
+    const where = this.searchService.buildWhereClause(filters);
+    const orderBy = this.searchService.buildOrderByClause(filters.sort);
+
+    if (filters.all) {
+      const total = await this.prisma.listing.count({ where });
+      if (total > PUBLIC_BROWSE_ALL_MAX) {
+        throw new BadRequestException(
+          `Too many results to return at once (max ${PUBLIC_BROWSE_ALL_MAX}). Use page and limit instead.`,
+        );
+      }
+
+      const rows = await this.prisma.listing.findMany({
+        where,
+        orderBy,
+        include: publicListingInclude,
+      });
+
+      return {
+        items: await this.mapPublicListings(rows),
+        meta: {
+          total,
+          page: 1,
+          limit: total,
+          totalPages: 1,
+        },
+      };
+    }
+
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 24;
     const skip = (page - 1) * limit;
-    const where = this.searchService.buildWhereClause(filters);
 
     const [rows, total] = await Promise.all([
       this.prisma.listing.findMany({
         where,
         skip,
         take: limit,
-        orderBy: this.searchService.buildOrderByClause(filters.sort),
+        orderBy,
         include: publicListingInclude,
       }),
       this.prisma.listing.count({ where }),
@@ -312,9 +340,13 @@ export class ListingsService {
       return toPublicListing(listing, promotionDisplay, frozenRate);
     }
 
+    // Bump views without advancing @updatedAt (admins sort by Updated).
     await this.prisma.listing.update({
       where: { id: listing.id },
-      data: { viewCount: { increment: 1 } },
+      data: {
+        viewCount: { increment: 1 },
+        updatedAt: listing.updatedAt,
+      },
     });
 
     return toPublicListing(
@@ -623,6 +655,8 @@ export class ListingsService {
     const currentPhotoIds = existingPhotos.map((photo) => photo.id);
     const currentPrimaryId =
       existingPhotos.find((photo) => photo.isPrimary)?.id ?? null;
+    const effectiveCurrentPrimaryId =
+      currentPrimaryId ?? currentPhotoIds[0] ?? null;
 
     const photoOrderChanged = Boolean(
       photoOrder?.length &&
@@ -630,7 +664,7 @@ export class ListingsService {
         photoOrder.some((id, index) => id !== currentPhotoIds[index])),
     );
     const primaryChanged = Boolean(
-      primaryPhotoId && primaryPhotoId !== currentPrimaryId,
+      primaryPhotoId && primaryPhotoId !== effectiveCurrentPrimaryId,
     );
 
     const hasListingFieldChanges = this.listingUpdateDataHasChanges(
@@ -1923,6 +1957,10 @@ export class ListingsService {
         );
       }
 
+      if (target.isPrimary) {
+        return;
+      }
+
       await tx.listingPhoto.updateMany({
         where: { listingId },
         data: { isPrimary: false },
@@ -1968,32 +2006,44 @@ export class ListingsService {
     },
     data: Prisma.ListingUpdateInput,
   ): boolean {
+    const normalizeOptionalString = (value: unknown): unknown => {
+      if (typeof value !== 'string') return value;
+      const trimmed = value.trim();
+      return trimmed === '' ? null : trimmed;
+    };
+
     const scalarChecks: Array<[unknown, unknown]> = [
       [data.listingTitle, listing.listingTitle],
       [data.brand, listing.brand],
       [data.model, listing.model],
-      [data.trim, listing.trim],
+      [normalizeOptionalString(data.trim), listing.trim],
       [data.manufacturingYear, listing.manufacturingYear],
       [data.isNew, listing.isNew],
-      [data.condition, listing.condition],
-      [data.bodyType, listing.bodyType],
-      [data.powertrainType, listing.powertrainType],
-      [data.color, listing.color],
+      [normalizeOptionalString(data.condition), listing.condition],
+      [normalizeOptionalString(data.bodyType), listing.bodyType],
+      [normalizeOptionalString(data.powertrainType), listing.powertrainType],
+      [normalizeOptionalString(data.color), listing.color],
       [data.seats, listing.seats],
-      [data.steeringPosition, listing.steeringPosition],
-      [data.drivetrain, listing.drivetrain],
+      [normalizeOptionalString(data.steeringPosition), listing.steeringPosition],
+      [normalizeOptionalString(data.drivetrain), listing.drivetrain],
       [data.mileageKm, listing.mileageKm],
       [data.hasWarranty, listing.hasWarranty],
-      [data.warrantyDetails, listing.warrantyDetails],
+      [
+        normalizeOptionalString(data.warrantyDetails),
+        listing.warrantyDetails,
+      ],
       [data.hasAccidentHistory, listing.hasAccidentHistory],
       [data.ownershipCount, listing.ownershipCount],
-      [data.registrationStatus, listing.registrationStatus],
-      [data.city, listing.city],
+      [
+        normalizeOptionalString(data.registrationStatus),
+        listing.registrationStatus,
+      ],
+      [normalizeOptionalString(data.city), listing.city],
       [data.country, listing.country],
       [data.deliveryEstimateDays, listing.deliveryEstimateDays],
-      [data.description, listing.description],
-      [data.videoUrl, listing.videoUrl],
-      [data.brochureUrl, listing.brochureUrl],
+      [normalizeOptionalString(data.description), listing.description],
+      [normalizeOptionalString(data.videoUrl), listing.videoUrl],
+      [normalizeOptionalString(data.brochureUrl), listing.brochureUrl],
       [data.isFullOption, listing.isFullOption],
       [data.status, listing.status],
     ];
@@ -2063,13 +2113,22 @@ export class ListingsService {
       return Number.isFinite(num) ? num : null;
     };
 
+    const nextRuleId =
+      parsePricingRuleIdFromPriceNotes(
+        typeof next.priceNotes === 'string' ? next.priceNotes : null,
+      ) ?? null;
+    const existingRuleId =
+      existing.pricingRuleId ??
+      parsePricingRuleIdFromPriceNotes(existing.priceNotes) ??
+      null;
+
     return (
       asNumber(next.basePriceRwf) !== asNumber(existing.basePriceRwf) ||
       asNumber(next.fobPriceRwf) !== asNumber(existing.fobPriceRwf) ||
       asNumber(next.discountRwf) !== asNumber(existing.discountRwf) ||
       asNumber(next.finalPriceRwf) !== asNumber(existing.finalPriceRwf) ||
       (next.currency ?? null) !== (existing.currency ?? null) ||
-      (next.priceNotes ?? null) !== (existing.priceNotes ?? null)
+      nextRuleId !== existingRuleId
     );
   }
 
@@ -2101,15 +2160,18 @@ export class ListingsService {
       return Number.isFinite(num) ? num : null;
     };
 
+    const nextBatteryHealthReport = next.batteryHealthReport ?? false;
+    const nextFastCharging =
+      next.fastChargingSupported ?? existing.fastChargingSupported ?? false;
+
     return (
       (next.rangeKm ?? null) !== (existing.rangeKm ?? null) ||
       (next.batteryHealthPercent ?? null) !==
         (existing.batteryHealthPercent ?? null) ||
       asNumber(next.batteryCapacityKwh) !==
         asNumber(existing.batteryCapacityKwh) ||
-      (next.batteryHealthReport ?? false) !== existing.batteryHealthReport ||
-      (next.fastChargingSupported ?? null) !==
-        (existing.fastChargingSupported ?? null) ||
+      nextBatteryHealthReport !== (existing.batteryHealthReport ?? false) ||
+      nextFastCharging !== (existing.fastChargingSupported ?? false) ||
       asNumber(next.chargingTimeHours) !==
         asNumber(existing.chargingTimeHours) ||
       asNumber(next.motorPowerKw) !== asNumber(existing.motorPowerKw) ||

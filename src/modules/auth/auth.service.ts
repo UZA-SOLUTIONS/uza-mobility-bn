@@ -326,7 +326,10 @@ export class AuthService {
     }
   }
 
-  async forgotPassword(email: string): Promise<{ message: string }> {
+  async forgotPassword(
+    email: string,
+    auditContext: RequestAuditContext = {},
+  ): Promise<{ message: string }> {
     const normalizedEmail = normalizeAuthEmail(email);
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
@@ -350,6 +353,16 @@ export class AuthService {
 
       await this.sendPasswordResetEmail(user, workspaceContext);
     }
+
+    await this.auditService.record({
+      action: 'auth:forgot-password',
+      entity: 'User',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        emailDomain: normalizedEmail.split('@')[1] ?? null,
+      },
+    });
 
     return { message: FORGOT_PASSWORD_MESSAGE };
   }
@@ -413,7 +426,10 @@ export class AuthService {
     return { message: 'Email verified successfully' };
   }
 
-  async resendVerificationByEmail(email: string): Promise<{ message: string }> {
+  async resendVerificationByEmail(
+    email: string,
+    auditContext: RequestAuditContext = {},
+  ): Promise<{ message: string }> {
     const normalizedEmail = normalizeAuthEmail(email);
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
@@ -422,6 +438,16 @@ export class AuthService {
     if (user && !user.isEmailVerified && user.isActive && !user.deletedAt) {
       await this.sendVerificationEmailForUser(user.id);
     }
+
+    await this.auditService.record({
+      action: 'auth:resend-verification',
+      entity: 'User',
+      ipAddress: auditContext.ipAddress,
+      userAgent: auditContext.userAgent,
+      metadata: {
+        emailDomain: normalizedEmail.split('@')[1] ?? null,
+      },
+    });
 
     return { message: RESEND_VERIFICATION_MESSAGE };
   }
@@ -671,10 +697,53 @@ export class AuthService {
     return compareSync(password, storedHash);
   }
 
+  private async hasRecentUnusedAuthToken(
+    userId: string,
+    type: AuthTokenType,
+    cooldownEnvKey: string,
+    defaultCooldownMs: number,
+  ): Promise<boolean> {
+    const cooldownMs = parseDurationToMs(
+      this.configService.get<string>(cooldownEnvKey),
+      defaultCooldownMs,
+    );
+    if (cooldownMs <= 0) {
+      return false;
+    }
+
+    const recent = await this.prisma.authToken.findFirst({
+      where: {
+        userId,
+        type,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+
+    if (!recent) {
+      return false;
+    }
+
+    return Date.now() - recent.createdAt.getTime() < cooldownMs;
+  }
+
   private async sendVerificationEmailForUser(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
     if (!user || user.isEmailVerified || !user.isActive || user.deletedAt) {
+      return;
+    }
+
+    if (
+      await this.hasRecentUnusedAuthToken(
+        userId,
+        AuthTokenType.EMAIL_VERIFICATION,
+        'EMAIL_VERIFICATION_COOLDOWN',
+        15 * 60 * 1000,
+      )
+    ) {
       return;
     }
 
@@ -727,6 +796,17 @@ export class AuthService {
     },
     workspaceContext: AuthWorkspaceContext,
   ): Promise<void> {
+    if (
+      await this.hasRecentUnusedAuthToken(
+        user.id,
+        AuthTokenType.PASSWORD_RESET,
+        'PASSWORD_RESET_COOLDOWN',
+        15 * 60 * 1000,
+      )
+    ) {
+      return;
+    }
+
     const rawToken = generateRawToken();
     const tokenHash = hashToken(rawToken);
     const expiresAt = new Date(

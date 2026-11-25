@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuditModule } from './common/audit/audit.module';
@@ -40,6 +41,13 @@ import { MongoModule } from './mongo/mongo.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    // Soft global ceiling; sensitive auth routes override with @Throttle.
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 300,
+      },
+    ]),
     MongoModule,
     UploadsModule,
     PdfModule,
@@ -71,6 +79,10 @@ import { MongoModule } from './mongo/mongo.module';
   controllers: [AppController],
   providers: [
     AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: HttpLoggingInterceptor,

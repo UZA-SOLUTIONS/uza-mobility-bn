@@ -22,6 +22,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { SkipAudit } from '../../common/audit/decorators/skip-audit.decorator';
 import { getRequestAuditContext } from '../../common/audit/request-context.util';
 import { StorageService } from '../../common/uploads/storage.service';
@@ -61,6 +62,7 @@ export class AuthController {
   @Post('register')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 5, ttl: 900_000 } })
   @ApiOperation({ summary: 'Register a new user' })
   @ApiOkResponse({ type: RegisterResponseDto })
   register(@Body() dto: RegisterDto, @Req() request: Request) {
@@ -70,6 +72,7 @@ export class AuthController {
   @Post('login')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 10, ttl: 900_000 } })
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiOkResponse({ type: AuthResponseDto })
   login(@Body() dto: LoginDto, @Req() request: Request) {
@@ -79,6 +82,7 @@ export class AuthController {
   @Get('google')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 20, ttl: 900_000 } })
   @ApiOperation({
     summary:
       'Start Google OAuth (redirects to Google — uses client secret on callback)',
@@ -103,6 +107,7 @@ export class AuthController {
   @Get('google/callback')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 20, ttl: 900_000 } })
   @ApiOperation({
     summary: 'Google OAuth callback — exchanges code with client secret',
   })
@@ -151,6 +156,7 @@ export class AuthController {
   @Post('google/complete')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 10, ttl: 900_000 } })
   @ApiOperation({
     summary: 'Finish Google sign-in after OAuth callback redirect',
   })
@@ -166,6 +172,7 @@ export class AuthController {
   @Post('admin/login')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 10, ttl: 900_000 } })
   @ApiOperation({ summary: 'Login an admin user with email and password' })
   @ApiOkResponse({ type: AuthResponseDto })
   loginAdmin(@Body() dto: LoginDto, @Req() request: Request) {
@@ -175,15 +182,23 @@ export class AuthController {
   @Post('forgot-password')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 3, ttl: 900_000 } })
   @ApiOperation({ summary: 'Request a password reset email' })
   @ApiOkResponse({ type: MessageResponseDto })
-  forgotPassword(@Body() dto: ForgotPasswordDto): Promise<MessageResponseDto> {
-    return this.authService.forgotPassword(dto.email);
+  forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+    @Req() request: Request,
+  ): Promise<MessageResponseDto> {
+    return this.authService.forgotPassword(
+      dto.email,
+      getRequestAuditContext(request),
+    );
   }
 
   @Post('reset-password')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 20, ttl: 900_000 } })
   @ApiOperation({ summary: 'Set a new password using a reset token' })
   @ApiOkResponse({ type: MessageResponseDto })
   resetPassword(@Body() dto: ResetPasswordDto): Promise<MessageResponseDto> {
@@ -193,6 +208,7 @@ export class AuthController {
   @Post('verify-email')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 20, ttl: 900_000 } })
   @ApiOperation({ summary: 'Verify email address using a verification token' })
   @ApiOkResponse({ type: MessageResponseDto })
   verifyEmail(@Body() dto: VerifyEmailDto): Promise<MessageResponseDto> {
@@ -202,16 +218,22 @@ export class AuthController {
   @Post('resend-verification')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 3, ttl: 900_000 } })
   @ApiOperation({ summary: 'Resend email verification link by email address' })
   @ApiOkResponse({ type: MessageResponseDto })
   resendVerification(
     @Body() dto: ForgotPasswordDto,
+    @Req() request: Request,
   ): Promise<MessageResponseDto> {
-    return this.authService.resendVerificationByEmail(dto.email);
+    return this.authService.resendVerificationByEmail(
+      dto.email,
+      getRequestAuditContext(request),
+    );
   }
 
   @Post('me/resend-verification')
   @SkipAudit()
+  @Throttle({ default: { limit: 3, ttl: 900_000 } })
   @ApiBearerAuth('JWT-access')
   @ApiOperation({
     summary: 'Resend email verification link for the signed-in user',
@@ -229,6 +251,7 @@ export class AuthController {
 
   @Post('refresh')
   @Public()
+  @Throttle({ default: { limit: 60, ttl: 900_000 } })
   @ApiBearerAuth('JWT-refresh')
   @ApiOperation({
     summary: 'Refresh access token (use refresh token in Authorization header)',
@@ -244,6 +267,7 @@ export class AuthController {
   @Post('logout')
   @Public()
   @SkipAudit()
+  @Throttle({ default: { limit: 30, ttl: 900_000 } })
   @ApiBearerAuth('JWT-refresh')
   @ApiOperation({ summary: 'Logout by invalidating the refresh token' })
   @ApiOkResponse({ description: 'Refresh token invalidated' })

@@ -160,7 +160,7 @@ export class SearchService {
     | Prisma.ListingOrderByWithRelationInput
     | Prisma.ListingOrderByWithRelationInput[] {
     const map: Record<SortOption, Prisma.ListingOrderByWithRelationInput> = {
-      [SortOption.NEWEST]: { createdAt: 'desc' },
+      [SortOption.NEWEST]: { updatedAt: 'desc' },
       [SortOption.PRICE_LOW]: { listingPricing: { displayPriceRwf: 'asc' } },
       [SortOption.PRICE_HIGH]: { listingPricing: { displayPriceRwf: 'desc' } },
       [SortOption.LOWEST_KM]: { mileageKm: 'asc' },

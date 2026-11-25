@@ -61,6 +61,15 @@ export class FilterPartsDto {
   @IsBoolean()
   inStock?: boolean;
 
+  @ApiPropertyOptional({
+    description:
+      'When true, return every matching part (ignores page/limit). Keep page/limit for paginated clients.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  all?: boolean;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)

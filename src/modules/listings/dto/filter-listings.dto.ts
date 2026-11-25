@@ -210,6 +210,15 @@ export class FilterListingsDto {
   @IsEnum(SortOption)
   sort?: SortOption;
 
+  @ApiPropertyOptional({
+    description:
+      'When true, return every matching listing (ignores page/limit). Keep page/limit for paginated clients.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  all?: boolean;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)
